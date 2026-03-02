@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.2 (2026-03-02)
+
+- Fix: Native mode shell hook now passthrough non-API commands directly without ccv interception
+- Added passthrough list for subcommands: `doctor`, `install`, `update`, `upgrade`, `auth`, `setup-token`, `agents`, `plugin`, `mcp`
+- Added passthrough list for flags: `--version`, `-v`, `--v`, `--help`, `-h`
+- These commands don't involve API calls and don't need proxy/logging
+
 ## 1.4.1 (2026-03-02)
 
 - Feat: Context Tab v2 — merged from PR #11, turn-based conversation view with collapsible history turns and current turn auto-selection
