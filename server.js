@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, existsSync, watchFile, unwatchFile, statSync, readdirSync, renameSync, unlinkSync, openSync, readSync, closeSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname } from 'node:path';
-import { homedir, userInfo, platform } from 'node:os';
+import { homedir, userInfo, platform, networkInterfaces } from 'node:os';
 import { execSync } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { LOG_FILE, _initPromise, _resumeState, resolveResumeChoice, _projectName, _logDir, _cachedApiKey, _cachedAuthHeader, _cachedHaikuModel } from './interceptor.js';
@@ -502,6 +502,24 @@ function handleRequest(req, res) {
   if (url === '/api/cli-mode' && method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ cliMode: isCliMode }));
+    return;
+  }
+
+  // 返回局域网访问地址
+  if (url === '/api/local-url' && method === 'GET') {
+    const nets = networkInterfaces();
+    let localIp = '127.0.0.1';
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        if (net.family === 'IPv4' && !net.internal) {
+          localIp = net.address;
+          break;
+        }
+      }
+      if (localIp !== '127.0.0.1') break;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ url: `http://${localIp}:${actualPort}` }));
     return;
   }
 

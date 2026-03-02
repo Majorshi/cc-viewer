@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.4 (2026-03-02)
+
+- Feat: QR code in Display Settings drawer — scan to access cc-viewer from mobile on LAN
+- Feat: `/api/local-url` endpoint returns local network IP and port
+- UI: rename "Settings" to "Display Settings" with i18n updates
+
 ## 1.4.3 (2026-03-02)
 
 - Feat: mobile CLI mode — full-screen terminal with status bar showing live monitoring project name
