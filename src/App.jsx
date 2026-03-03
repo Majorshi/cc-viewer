@@ -213,7 +213,21 @@ class App extends React.Component {
     this._localLogFile = file;
     this.setState({ fileLoading: true, fileLoadingCount: 0 });
     fetch(`/api/local-log?file=${encodeURIComponent(file)}`)
-      .then(res => res.json())
+      .then(res => {
+        // 检查响应状态和 Content-Type
+        if (!res.ok) {
+          return res.text().then(text => {
+            throw new Error(`HTTP ${res.status}: ${text}`);
+          });
+        }
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          return res.text().then(text => {
+            throw new Error(`Invalid content type: ${contentType}. Response: ${text.substring(0, 100)}`);
+          });
+        }
+        return res.json();
+      })
       .then(entries => {
         if (Array.isArray(entries)) {
           this.animateLoadingCount(entries.length, () => {

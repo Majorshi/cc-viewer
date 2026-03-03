@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync, watchFile, unwatchFile, statSync, readdirSync, renameSync, unlinkSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, watchFile, unwatchFile, statSync, readdirSync, renameSync, unlinkSync, openSync, readSync, closeSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname } from 'node:path';
 import { homedir, userInfo, platform, networkInterfaces } from 'node:os';
@@ -772,14 +772,21 @@ function handleRequest(req, res) {
   }
 
   // 读取指定本地日志文件（支持 project/file 路径）
-  if (url.startsWith('/api/local-log?') && method === 'GET') {
-    const params = new URLSearchParams(url.split('?')[1]);
-    const file = params.get('file');
+  if (url === '/api/local-log' && method === 'GET') {
+    const file = parsedUrl.searchParams.get('file');
     if (!file || file.includes('..')) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid file name' }));
       return;
     }
+
+    // 验证文件类型：只允许 .jsonl 文件
+    if (!file.endsWith('.jsonl')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid file type. Only .jsonl files are allowed.' }));
+      return;
+    }
+
     const filePath = join(LOG_DIR, file);
     try {
       if (!existsSync(filePath)) {
@@ -787,6 +794,16 @@ function handleRequest(req, res) {
         res.end(JSON.stringify({ error: 'File not found' }));
         return;
       }
+
+      // 验证文件确实在 LOG_DIR 内（防止路径穿越）
+      const realPath = realpathSync(filePath);
+      const realLogDir = realpathSync(LOG_DIR);
+      if (!realPath.startsWith(realLogDir)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Access denied' }));
+        return;
+      }
+
       const content = readFileSync(filePath, 'utf-8');
       const entries = content.split('\n---\n').filter(line => line.trim()).map(entry => {
         try { return JSON.parse(entry); } catch { return null; }
@@ -852,10 +869,9 @@ function handleRequest(req, res) {
   }
 
   // GET /api/concept?lang=zh&doc=Tool-Bash
-  if (method === 'GET' && url.startsWith('/api/concept')) {
-    const conceptParams = new URL(url, 'http://localhost').searchParams;
-    const lang = conceptParams.get('lang') || 'zh';
-    const doc = conceptParams.get('doc') || '';
+  if (method === 'GET' && url === '/api/concept') {
+    const lang = parsedUrl.searchParams.get('lang') || 'zh';
+    const doc = parsedUrl.searchParams.get('doc') || '';
     // 安全校验：只允许字母、数字、连字符
     if (!/^[a-zA-Z0-9-]+$/.test(doc) || !/^[a-z]{2}(-[a-zA-Z]{2,})?$/.test(lang)) {
       res.writeHead(400, { 'Content-Type': 'application/json' });

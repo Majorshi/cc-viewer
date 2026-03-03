@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.10 (2026-03-03)
+
+- Fix: concept help docs (?) links broken — `/api/concept` route lost query params after URL parsing refactor
+- Feat: split panel snap-to-columns — drag resizer snaps to 60/80/100/120 terminal column widths with visual guides
+- Feat: split ratio persistence — user's preferred panel ratio saved to localStorage
+- Security: `/api/local-log` hardened with `.jsonl` file type check and `realpathSync` path traversal prevention
+- Improve: `/api/local-log` route uses `parsedUrl.searchParams` consistent with other routes
+- UI: robust error handling for local log file loading with content-type validation
+
 ## 1.4.9 (2026-03-03)
 
 - Feat: Git Changes panel — displays modified/added/deleted files in left sidebar

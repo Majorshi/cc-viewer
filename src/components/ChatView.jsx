@@ -76,13 +76,20 @@ class ChatView extends React.Component {
     super(props);
     this.containerRef = React.createRef();
     this.splitContainerRef = React.createRef();
+    this.innerSplitRef = React.createRef();
+
+    // 从 localStorage 读取用户偏好的 splitRatio
+    const savedRatio = localStorage.getItem('cc-viewer-split-ratio');
+    const initialRatio = savedRatio ? parseFloat(savedRatio) : null;
+
     this.state = {
       visibleCount: 0,
       loading: false,
       allItems: [],
       highlightTs: null,
       highlightFading: false,
-      splitRatio: 0.6,
+      splitRatio: initialRatio || 0.6, // 如果没有保存的偏好，使用默认值
+      needsInitialSnap: initialRatio === null, // 标记是否需要初始化吸附
       inputEmpty: true,
       pendingInput: null,
       stickyBottom: true,
@@ -94,6 +101,9 @@ class ChatView extends React.Component {
       currentGitDiff: null,
       fileExplorerExpandedPaths: new Set(),
       gitChangesOpen: false,
+      snapLines: [],
+      activeSnapLine: null,
+      isDragging: false,
     };
     this._queueTimer = null;
     this._prevItemsLen = 0;
@@ -113,6 +123,10 @@ class ChatView extends React.Component {
       this.connectInputWs();
     }
     this._bindStickyScroll();
+    // 初始化时吸附到 60cols
+    if (this.state.needsInitialSnap && this.props.cliMode && this.props.terminalVisible) {
+      this._snapToInitialPosition();
+    }
   }
 
   componentDidUpdate(prevProps) {
@@ -734,17 +748,106 @@ class ChatView extends React.Component {
   handleSplitMouseDown = (e) => {
     e.preventDefault();
     this._resizing = true;
+
+    // 只在 PC 模式下启用吸附功能
+    const isCliMode = window.location.search.includes('token=');
+    const enableSnap = !isCliMode;
+
+    // 计算吸附线位置（基于终端标准列宽）
+    let snapLines = [];
+    if (enableSnap) {
+      const container = this.innerSplitRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const containerWidth = rect.width;
+
+        // 终端字体：13px Menlo/Monaco，字符宽度约为 7.8px
+        const charWidth = 7.8;
+        // 常见终端列宽：60, 80, 100, 120
+        const terminalWidths = [60, 80, 100, 120];
+        const resizerWidth = 5; // 分隔条宽度
+
+        snapLines = terminalWidths.map(cols => {
+          const terminalPx = cols * charWidth;
+          // 终端从右往左布局，终端右边缘在容器右边缘
+          // 分隔条右边缘位置（从容器左边缘算） = 容器宽度 - 终端宽度
+          const resizerRight = containerWidth - terminalPx;
+          // 分隔条左边缘位置 = 分隔条右边缘 - 分隔条宽度
+          const resizerLeft = resizerRight - resizerWidth;
+          // 对话区域占比 = 分隔条左边缘位置 / 容器宽度
+          const ratio = resizerLeft / containerWidth;
+
+          // 只保留合理范围内的吸附线
+          if (ratio < 0.25 || ratio > 0.85) return null;
+
+          return {
+            cols,
+            ratio,
+            linePosition: resizerLeft // 吸附线显示在分隔条左边缘
+          };
+        }).filter(snap => snap !== null);
+      }
+    }
+
+    this.setState({ isDragging: true, snapLines });
+
     const onMouseMove = (ev) => {
       if (!this._resizing) return;
-      const container = this.splitContainerRef.current;
+      const container = this.innerSplitRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      const ratio = (ev.clientX - rect.left) / rect.width;
-      const clamped = Math.min(0.85, Math.max(0.25, ratio));
-      this.setState({ splitRatio: clamped });
+      let ratio = (ev.clientX - rect.left) / rect.width;
+      ratio = Math.min(0.85, Math.max(0.25, ratio));
+
+      // 吸附逻辑
+      let activeSnapLine = null;
+      if (enableSnap && snapLines.length > 0) {
+        const snapThreshold = 50; // 50px 的吸附阈值
+        let minDistance = Infinity;
+        let closestSnap = null;
+
+        for (const snap of snapLines) {
+          const distance = Math.abs(ev.clientX - rect.left - snap.linePosition);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestSnap = snap;
+          }
+        }
+
+        if (closestSnap && minDistance < snapThreshold) {
+          activeSnapLine = closestSnap;
+        }
+      }
+
+      this.setState({ splitRatio: ratio, activeSnapLine });
     };
+
     const onMouseUp = () => {
       this._resizing = false;
+
+      // 松开鼠标时，吸附到最近的线
+      if (enableSnap && this.state.activeSnapLine) {
+        const newRatio = this.state.activeSnapLine.ratio;
+        // 保存用户偏好到 localStorage
+        localStorage.setItem('cc-viewer-split-ratio', newRatio.toString());
+        this.setState({
+          splitRatio: newRatio,
+          isDragging: false,
+          activeSnapLine: null,
+          snapLines: [],
+          needsInitialSnap: false
+        });
+      } else {
+        // 用户手动拖拽到非吸附位置，也保存偏好
+        localStorage.setItem('cc-viewer-split-ratio', this.state.splitRatio.toString());
+        this.setState({
+          isDragging: false,
+          activeSnapLine: null,
+          snapLines: [],
+          needsInitialSnap: false
+        });
+      }
+
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.body.style.cursor = '';
@@ -767,6 +870,32 @@ class ChatView extends React.Component {
       return { fileExplorerExpandedPaths: newSet };
     });
   };
+
+  _snapToInitialPosition() {
+    // 初始化时吸附到 60cols
+    const container = this.innerSplitRef.current;
+    if (!container) {
+      // 容器还未准备好，延迟执行
+      setTimeout(() => this._snapToInitialPosition(), 100);
+      return;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const containerWidth = rect.width;
+    const charWidth = 7.8;
+    const targetCols = 60;
+    const resizerWidth = 5;
+
+    const terminalPx = targetCols * charWidth;
+    const resizerRight = containerWidth - terminalPx;
+    const resizerLeft = resizerRight - resizerWidth;
+    const ratio = resizerLeft / containerWidth;
+
+    if (ratio >= 0.25 && ratio <= 0.85) {
+      this.setState({ splitRatio: ratio, needsInitialSnap: false });
+      localStorage.setItem('cc-viewer-split-ratio', ratio.toString());
+    }
+  }
 
   render() {
     const { mainAgentSessions, cliMode, terminalVisible } = this.props;
@@ -928,7 +1057,34 @@ class ChatView extends React.Component {
             onFileClick={(path) => this.setState({ currentGitDiff: path, currentFile: null })}
           />
         )}
-        <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', minWidth: 0, position: 'relative' }} ref={this.innerSplitRef}>
+          {/* 吸附预览框 */}
+          {this.state.isDragging && this.state.activeSnapLine && (() => {
+            const currentRatio = this.state.splitRatio;
+            const snapRatio = this.state.activeSnapLine.ratio;
+            const leftRatio = Math.min(currentRatio, snapRatio);
+            const widthRatio = Math.abs(snapRatio - currentRatio);
+            return (
+              <div
+                className={styles.snapPreview}
+                style={{
+                  left: `${leftRatio * 100}%`,
+                  width: `${widthRatio * 100}%`
+                }}
+              />
+            );
+          })()}
+          {/* 吸附线 */}
+          {this.state.isDragging && this.state.snapLines.map((snap, idx) => {
+            const isActive = this.state.activeSnapLine && this.state.activeSnapLine.cols === snap.cols;
+            return (
+              <div
+                key={idx}
+                className={isActive ? styles.snapLineActive : styles.snapLine}
+                style={{ left: `${snap.linePosition}px` }}
+              />
+            );
+          })}
           <div className={styles.chatSection} style={terminalVisible ? { flex: splitRatio, minWidth: 0 } : { flex: 1, minWidth: 0 }}>
             {this.state.currentGitDiff ? (
               <GitDiffView
