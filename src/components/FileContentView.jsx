@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -101,6 +101,7 @@ export default function FileContentView({ filePath, onClose }) {
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
   const [fileSize, setFileSize] = useState(0);
+  const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
   const codeRef = useRef(null);
   const lineNumRef = useRef(null);
@@ -206,35 +207,50 @@ export default function FileContentView({ filePath, onClose }) {
     e.preventDefault();
   };
 
-  useEffect(() => {
+  // 加载文件内容
+  const loadFileContent = useCallback(() => {
     mounted.current = true;
     setContent(null);
     setError(null);
+    setLoading(true);
 
     fetch(`/api/file-content?path=${encodeURIComponent(filePath)}`)
-      .then(r => {
+      .then((r) => {
         if (!r.ok) {
-          return r.json().then(err => {
-            throw new Error(err.error || 'Failed to load');
-          }).catch(() => {
-            throw new Error(`HTTP ${r.status}`);
-          });
+          return r
+            .json()
+            .then((err) => {
+              throw new Error(err.error || 'Failed to load');
+            })
+            .catch(() => {
+              throw new Error(`HTTP ${r.status}`);
+            });
         }
         return r.json();
       })
-      .then(data => {
+      .then((data) => {
         if (mounted.current) {
           setContent(data.content);
           setFileSize(data.size);
           computeMinimapData(data.content);
+          setLoading(false);
         }
       })
       .catch((err) => {
-        if (mounted.current) setError(`${t('ui.fileLoadError')}: ${err.message}`);
+        if (mounted.current) {
+          setError(`${t('ui.fileLoadError')}: ${err.message}`);
+          setLoading(false);
+        }
       });
-
-    return () => { mounted.current = false; };
   }, [filePath]);
+
+  useEffect(() => {
+    loadFileContent();
+
+    return () => {
+      mounted.current = false;
+    };
+  }, [loadFileContent]);
 
   useEffect(() => {
     if (content && codeRef.current) {
@@ -329,8 +345,8 @@ export default function FileContentView({ filePath, onClose }) {
       </div>
       <div className={styles.contentContainer}>
         {error && <div className={styles.error}>{error}</div>}
-        {!content && !error && <div className={styles.loading}>{t('ui.loading')}</div>}
-        {content && (
+        {loading && !error && <div className={styles.loading}>{t('ui.loading')}</div>}
+        {!loading && content && (
           <div className={styles.codeBlock}>
             <div className={styles.lineNumberCol} ref={lineNumScrollRef}>
               <div ref={lineNumRef}></div>

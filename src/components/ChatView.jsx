@@ -104,7 +104,10 @@ class ChatView extends React.Component {
       snapLines: [],
       activeSnapLine: null,
       isDragging: false,
+      fileVersion: 0, // 用于强制 FileContentView 重新挂载
     };
+    this._fileChangeWs = null; // 文件变更 WebSocket 引用
+    this._fileChangeDebounceTimer = null; // 防抖定时器
     this._queueTimer = null;
     this._prevItemsLen = 0;
     this._scrollTargetIdx = null;
@@ -127,6 +130,8 @@ class ChatView extends React.Component {
     if (this.state.needsInitialSnap && this.props.cliMode && this.props.terminalVisible) {
       this._snapToInitialPosition();
     }
+    // 监听文件变更事件
+    this._setupFileChangeWatcher();
   }
 
   componentDidUpdate(prevProps) {
@@ -161,6 +166,15 @@ class ChatView extends React.Component {
     if (this._inputWs) {
       this._inputWs.close();
       this._inputWs = null;
+    }
+    // 清理文件变更监听
+    if (this._fileChangeWs) {
+      this._fileChangeWs.close();
+      this._fileChangeWs = null;
+    }
+    if (this._fileChangeDebounceTimer) {
+      clearTimeout(this._fileChangeDebounceTimer);
+      this._fileChangeDebounceTimer = null;
     }
   }
 
@@ -880,6 +894,76 @@ class ChatView extends React.Component {
     localStorage.setItem('cc-viewer-terminal-width', terminalPx.toString());
   }
 
+  _setupFileChangeWatcher() {
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/terminal`;
+
+      this._fileChangeWs = new WebSocket(wsUrl);
+
+      this._fileChangeWs.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          // 只处理 file-change 事件
+          if (msg.type === 'file-change') {
+            const { currentFile } = this.state;
+
+            // 如果当前没有打开文件，忽略
+            if (!currentFile) return;
+
+            // 获取文件名进行比较
+            const getFileName = (p) => {
+              if (!p) return '';
+              return p.split('/').pop();
+            };
+
+            const changedFileName = getFileName(msg.path);
+            const currentFileName = getFileName(currentFile);
+
+            // 检查是否是当前打开的文件
+            if (changedFileName === currentFileName && changedFileName) {
+              // 清除之前的定时器
+              if (this._fileChangeDebounceTimer) {
+                clearTimeout(this._fileChangeDebounceTimer);
+              }
+
+              // 使用防抖
+              this._fileChangeDebounceTimer = setTimeout(() => {
+                // 文件被删除 - 关闭视图
+                if (msg.eventType === 'unlink') {
+                  this.setState({ currentFile: null, fileVersion: 0 });
+                }
+                // 文件被修改 - 强制重新挂载组件
+                else if (msg.eventType === 'change' || msg.eventType === 'add') {
+                  this.setState((prev) => ({ fileVersion: prev.fileVersion + 1 }));
+                }
+              }, 300);
+            }
+          }
+        } catch (err) {
+          // Failed to parse WebSocket message
+        }
+      };
+
+      this._fileChangeWs.onerror = () => {
+        // WebSocket error
+      };
+
+      this._fileChangeWs.onclose = () => {
+        // WebSocket closed, reconnect in 2s
+        // 只有在组件未卸载（_fileChangeWs 未被清空）时才重连
+        setTimeout(() => {
+          if (this._fileChangeWs !== null) {
+            this._setupFileChangeWatcher();
+          }
+        }, 2000);
+      };
+    } catch (err) {
+      // Failed to create WebSocket
+    }
+  }
+
   render() {
     const { mainAgentSessions, cliMode, terminalVisible } = this.props;
     const { allItems, visibleCount, loading, terminalWidth } = this.state;
@@ -1092,8 +1176,9 @@ class ChatView extends React.Component {
               />
             ) : this.state.currentFile ? (
               <FileContentView
+                key={this.state.fileVersion}
                 filePath={this.state.currentFile}
-                onClose={() => this.setState({ currentFile: null })}
+                onClose={() => this.setState({ currentFile: null, fileVersion: 0 })}
               />
             ) : (
               messageList

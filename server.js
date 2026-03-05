@@ -17,6 +17,13 @@ const PREFS_FILE = join(LOG_DIR, 'preferences.json');
 const isCliMode = process.env.CCV_CLI_MODE === '1';
 const isWorkspaceMode = process.env.CCV_WORKSPACE_MODE === '1';
 
+// 统一的文件/目录忽略规则
+const IGNORED_PATTERNS = new Set([
+  'node_modules', '.git', '.svn', '.hg', '.DS_Store',
+  '__pycache__', '.next', '.nuxt', 'dist',
+  '.cache', '.idea', '.vscode'
+]);
+
 // 工作区模式：保存 Claude 额外参数，供 launch API 使用
 let _workspaceClaudeArgs = [];
 let _workspaceLaunched = false; // 工作区是否已经启动了会话
@@ -709,9 +716,8 @@ async function handleRequest(req, res) {
     const targetDir = join(cwd, reqPath);
     try {
       const entries = readdirSync(targetDir, { withFileTypes: true });
-      const HIDDEN = new Set(['node_modules', '.git', '.svn', '.hg', '.DS_Store', '__pycache__', '.next', '.nuxt', 'dist', '.cache', '.idea', '.vscode']);
       const items = entries
-        .filter(e => !e.name.startsWith('.') && !HIDDEN.has(e.name))
+        .filter(e => !e.name.startsWith('.') && !IGNORED_PATTERNS.has(e.name))
         .map(e => ({ name: e.name, type: e.isDirectory() ? 'directory' : 'file' }))
         .sort((a, b) => {
           if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
@@ -1272,7 +1278,8 @@ export async function startViewer() {
 async function setupTerminalWebSocket(httpServer) {
   try {
     const { WebSocketServer } = await import('ws');
-    const { writeToPty, resizePty, onPtyData, onPtyExit, getPtyState, getOutputBuffer } = await import('./pty-manager.js');
+    const { writeToPty, resizePty, onPtyData, onPtyExit, getPtyState, getOutputBuffer, getCurrentWorkspace } = await import('./pty-manager.js');
+    const { default: chokidar } = await import('chokidar');
 
     const wss = new WebSocketServer({ noServer: true });
 
@@ -1293,6 +1300,139 @@ async function setupTerminalWebSocket(httpServer) {
         }
       }
       return null;
+    };
+
+    // 文件监控器：监控工作区目录变更
+    let fileWatcher = null;
+    let fileWatchDebounceTimer = null;
+    let currentWatchPath = null;
+
+    // 忽略规则：从统一的 IGNORED_PATTERNS 生成
+    const ignoredPaths = Array.from(IGNORED_PATTERNS).map(p => `**/${p}/**`);
+
+    // 启动文件监控
+    const startFileWatcher = (watchPath) => {
+      if (fileWatcher) {
+        fileWatcher.close();
+      }
+      currentWatchPath = watchPath;
+
+      try {
+        fileWatcher = chokidar.watch(watchPath, {
+          ignored: ignoredPaths,
+          persistent: true,
+          ignoreInitial: true, // 忽略初始扫描，只监控变更
+          awaitWriteFinish: {
+            stabilityThreshold: 100,
+            pollInterval: 50
+          }
+        });
+
+        // 使用防抖避免频繁触发
+        fileWatcher.on('all', (eventType, path) => {
+          if (fileWatchDebounceTimer) {
+            clearTimeout(fileWatchDebounceTimer);
+          }
+
+          fileWatchDebounceTimer = setTimeout(() => {
+            console.log(`[CC Viewer] File change detected: ${eventType} - ${path}`);
+
+            // 广播文件变更事件给所有连接的客户端
+            const changeEvent = {
+              type: 'file-change',
+              eventType,
+              path,
+              watchPath: currentWatchPath
+            };
+
+            const clientCount = wss.clients.size;
+            console.log(`[CC Viewer] Broadcasting file-change to ${clientCount} client(s)`);
+
+            wss.clients.forEach((client) => {
+              if (client.readyState === 1) { // WebSocket.OPEN
+                try {
+                  client.send(JSON.stringify(changeEvent));
+                } catch (err) {
+                  console.error('[CC Viewer] Failed to send file-change event:', err.message);
+                }
+              }
+            });
+          }, 200); // 200ms 防抖延迟
+        });
+
+        console.log(`[CC Viewer] File watcher started for: ${watchPath}`);
+      } catch (err) {
+        console.error('[CC Viewer] Failed to start file watcher:', err.message);
+      }
+    };
+
+    // 停止文件监控
+    const stopFileWatcher = () => {
+      if (fileWatchDebounceTimer) {
+        clearTimeout(fileWatchDebounceTimer);
+        fileWatchDebounceTimer = null;
+      }
+      if (fileWatcher) {
+        fileWatcher.close();
+        fileWatcher = null;
+      }
+      currentWatchPath = null;
+    };
+
+    // 监听 PTY 退出事件，停止文件监控（只在监控器运行时停止）
+    onPtyExit(() => {
+      if (fileWatcher && !fileWatcher.closed) {
+        stopFileWatcher();
+        console.log('[CC Viewer] File watcher stopped (PTY exited)');
+      }
+    });
+
+    // 初始化时检查是否有活跃的工作区
+    const workspace = getCurrentWorkspace();
+    if (workspace.running && workspace.cwd) {
+      startFileWatcher(workspace.cwd);
+    }
+
+    // 定期检查工作区状态，确保监控器在 PTY 启动后自动开始工作
+    const workspaceCheckInterval = setInterval(() => {
+      const currentWorkspace = getCurrentWorkspace();
+      const isRunning = currentWorkspace.running && currentWorkspace.cwd;
+
+      // 调试日志
+      if (process.env.CCV_DEBUG) {
+        console.log('[CC Viewer] Workspace check:', {
+          running: currentWorkspace.running,
+          cwd: currentWorkspace.cwd,
+          fileWatcher: fileWatcher ? (fileWatcher.closed ? 'closed' : 'active') : 'none',
+          currentWatchPath
+        });
+      }
+
+      // 如果 PTY 正在运行但监控器未启动，则启动监控器
+      if (isRunning && (!fileWatcher || fileWatcher.closed)) {
+        if (currentWatchPath !== currentWorkspace.cwd) {
+          console.log(`[CC Viewer] Starting file watcher for: ${currentWorkspace.cwd}`);
+          startFileWatcher(currentWorkspace.cwd);
+        }
+      }
+
+      // 如果 PTY 未运行但在 CLI 模式下，监控当前工作目录
+      // 这样即使 PTY 启动失败，文件监控仍然可以工作
+      if (!currentWorkspace.running && isCliMode && (!fileWatcher || fileWatcher.closed)) {
+        const projectDir = process.env.CCV_PROJECT_DIR || process.cwd();
+        if (currentWatchPath !== projectDir) {
+          console.log(`[CC Viewer] Starting file watcher for current directory: ${projectDir}`);
+          startFileWatcher(projectDir);
+        }
+      }
+    }, 1000); // 每秒检查一次
+
+    // 清理定时器
+    const originalClose = wss.close;
+    wss.close = function() {
+      clearInterval(workspaceCheckInterval);
+      stopFileWatcher();
+      return originalClose.call(this);
     };
 
     httpServer.on('upgrade', (req, socket, head) => {
