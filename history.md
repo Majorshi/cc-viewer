@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0 (2026-03-08)
+
+- Feat: mobile IndexedDB entry cache — first load caches all entries, subsequent visits restore instantly from cache before SSE arrives
+- Perf: singleton IndexedDB connection with write deduplication to avoid redundant structured clone on frequent SSE updates
+- Feat: 7-day automatic cache expiry with cleanup on read
+- Feat: mobile stats panel (MobileStats component)
+
 ## 1.4.32 (2026-03-07)
 
 - Feat: git changes file list now highlights the selected file, matching file explorer's hover and selected state style

@@ -370,8 +370,8 @@ class AppHeader extends React.Component {
     const stats = computeCacheRebuildStats(requests);
     const reasonKeys = ['ttl', 'system_change', 'tools_change', 'model_change', 'msg_truncated', 'msg_modified', 'key_change'];
     const i18nMap = {
-      ttl: 'ttl', system_change: 'systemChange', tools_change: 'toolsChange',
-      model_change: 'modelChange', msg_truncated: 'msgTruncated', msg_modified: 'msgModified', key_change: 'keyChange',
+      ttl: 'cacheLoss.ttl', system_change: 'cacheLoss.systemChange', tools_change: 'cacheLoss.toolsChange',
+      model_change: 'cacheLoss.modelChange', msg_truncated: 'cacheLoss.msgTruncated', msg_modified: 'cacheLoss.msgModified', key_change: 'cacheLoss.keyChange',
     };
     const activeReasons = reasonKeys.filter(k => stats[k].count > 0);
 
@@ -409,7 +409,7 @@ class AppHeader extends React.Component {
             <tbody>
               {activeReasons.map(k => (
                 <tr key={k} className={styles.rowBorder}>
-                  <td className={styles.label}>{t(`ui.cacheRebuild.${i18nMap[k]}`)}</td>
+                  <td className={styles.label}>{t(`ui.${i18nMap[k]}`)}</td>
                   <td className={styles.td}>{stats[k].count}</td>
                   <td className={styles.td}>{formatTokenCount(stats[k].cacheCreate)}</td>
                 </tr>

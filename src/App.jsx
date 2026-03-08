@@ -9,6 +9,7 @@ import ChatView from './components/ChatView';
 import TerminalPanel from './components/TerminalPanel';
 import PanelResizer from './components/PanelResizer';
 import MobileGitDiff from './components/MobileGitDiff';
+import MobileStats from './components/MobileStats';
 import WorkspaceList from './components/WorkspaceList';
 import { t, getLang, setLang } from './i18n';
 import { formatTokenCount, filterRelevantRequests, findPrevMainAgentTimestamp } from './utils/helpers';
@@ -16,6 +17,7 @@ import { isMainAgent } from './utils/contentFilter';
 import { classifyRequest } from './utils/requestType';
 import styles from './App.module.css';
 import { apiUrl } from './utils/apiUrl';
+import { saveEntries, loadEntries, clearEntries } from './utils/entryCache';
 
 class App extends React.Component {
   constructor(props) {
@@ -95,9 +97,30 @@ class App extends React.Component {
       .catch(() => { });
 
     // 获取当前监控的项目名称
+    const params = new URLSearchParams(window.location.search);
+    const logfile = params.get('logfile');
     fetch(apiUrl('/api/project-name'))
       .then(res => res.json())
-      .then(data => this.setState({ projectName: data.projectName || '' }))
+      .then(data => {
+        const projectName = data.projectName || '';
+        this.setState({ projectName });
+        // 移动端：从缓存恢复数据，在 SSE 数据到达前立即渲染
+        if (isMobile && projectName && !logfile && this.state.requests.length === 0) {
+          loadEntries(projectName).then(cached => {
+            if (cached && this.state.requests.length === 0) {
+              this.assignMessageTimestamps(cached);
+              const mainAgentSessions = this.buildSessionsFromEntries(cached);
+              const filtered = filterRelevantRequests(cached);
+              this.setState({
+                requests: cached,
+                selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
+                mainAgentSessions,
+                // fileLoading 保持 true，等 SSE 最终数据到达后再关闭
+              });
+            }
+          });
+        }
+      })
       .catch(() => { });
 
     // 获取 GitHub star 数
@@ -119,8 +142,6 @@ class App extends React.Component {
       .catch(() => { });
 
     // 检查是否是通过 ?logfile= 打开的历史日志
-    const params = new URLSearchParams(window.location.search);
-    const logfile = params.get('logfile');
     if (logfile) {
       this.loadLocalLogFile(logfile);
     } else {
@@ -135,6 +156,7 @@ class App extends React.Component {
     if (this.eventSource) this.eventSource.close();
     if (this._autoSelectTimer) clearTimeout(this._autoSelectTimer);
     if (this._loadingCountTimer) cancelAnimationFrame(this._loadingCountTimer);
+    if (this._cacheSaveTimer) clearTimeout(this._cacheSaveTimer);
   }
 
   animateLoadingCount(target, onDone) {
@@ -216,6 +238,9 @@ class App extends React.Component {
             fileLoading: false,
             fileLoadingCount: 0,
           });
+          if (isMobile && this.state.projectName) {
+            saveEntries(this.state.projectName, entries);
+          }
         } else {
           this.setState({ fileLoading: false, fileLoadingCount: 0 });
         }
@@ -236,6 +261,9 @@ class App extends React.Component {
                   fileLoading: false,
                   fileLoadingCount: 0,
                 });
+                if (isMobile && this.state.projectName) {
+                  saveEntries(this.state.projectName, entries);
+                }
               });
             } else {
               this.setState({
@@ -245,6 +273,7 @@ class App extends React.Component {
                 fileLoading: false,
                 fileLoadingCount: 0,
               });
+              if (isMobile) clearEntries();
             }
           } else {
             this.setState({ fileLoading: false, fileLoadingCount: 0 });
@@ -271,6 +300,7 @@ class App extends React.Component {
             mainAgentSessions: [],
             selectedIndex: null,
           });
+          if (isMobile) clearEntries();
         } catch {}
       });
       this.eventSource.addEventListener('workspace_stopped', () => {
@@ -418,6 +448,14 @@ class App extends React.Component {
         }
 
         return { requests, cacheExpireAt, cacheType, mainAgentSessions };
+      }, () => {
+        // 移动端：防抖 5s 批量写入缓存
+        if (isMobile && this.state.projectName) {
+          if (this._cacheSaveTimer) clearTimeout(this._cacheSaveTimer);
+          this._cacheSaveTimer = setTimeout(() => {
+            if (this.state.projectName) saveEntries(this.state.projectName, this.state.requests);
+          }, 5000);
+        }
       });
     } catch (error) {
       console.error('处理事件消息失败:', error);
@@ -894,7 +932,7 @@ class App extends React.Component {
                 type="text"
                 size="small"
                 icon={<BranchesOutlined />}
-                onClick={() => this.setState(prev => ({ mobileGitDiffVisible: !prev.mobileGitDiffVisible, mobileChatVisible: false }))}
+                onClick={() => this.setState(prev => ({ mobileGitDiffVisible: !prev.mobileGitDiffVisible, mobileChatVisible: false, mobileStatsVisible: false }))}
                 style={{ color: this.state.mobileGitDiffVisible ? '#fff' : '#888', fontSize: 12 }}
               >
                 {this.state.mobileGitDiffVisible ? t('ui.mobileGitDiffExit') : t('ui.mobileGitDiffBrowse')}
@@ -903,7 +941,7 @@ class App extends React.Component {
                 type="text"
                 size="small"
                 icon={<MessageOutlined />}
-                onClick={() => this.setState(prev => ({ mobileChatVisible: !prev.mobileChatVisible, mobileGitDiffVisible: false }))}
+                onClick={() => this.setState(prev => ({ mobileChatVisible: !prev.mobileChatVisible, mobileGitDiffVisible: false, mobileStatsVisible: false }))}
                 style={{ color: this.state.mobileChatVisible ? '#fff' : '#888', fontSize: 12 }}
               >
                 {this.state.mobileChatVisible ? t('ui.mobileChatExit') : t('ui.mobileChatBrowse')}
@@ -924,6 +962,18 @@ class App extends React.Component {
                       <line x1="16" y1="17" x2="8" y2="17" />
                     </svg>
                     {t('ui.logManagement')}
+                  </button>
+                  <button
+                    className={styles.mobileMenuItem}
+                    onClick={() => { this.setState({ mobileMenuVisible: false, mobileStatsVisible: true, mobileGitDiffVisible: false, mobileChatVisible: false }); }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7" />
+                      <rect x="14" y="3" width="7" height="7" />
+                      <rect x="3" y="14" width="7" height="7" />
+                      <rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                    {t('ui.tokenStats')}
                   </button>
                 </div>
               </>
@@ -959,6 +1009,15 @@ class App extends React.Component {
                   />
                 </div>
               </ConfigProvider>
+            </div>
+            <div className={`${styles.mobileStatsOverlay} ${this.state.mobileStatsVisible ? styles.mobileStatsOverlayVisible : ''}`}>
+              <div className={styles.mobileStatsInner}>
+                <MobileStats
+                  requests={filteredRequests}
+                  visible={this.state.mobileStatsVisible}
+                  onClose={() => this.setState({ mobileStatsVisible: false })}
+                />
+              </div>
             </div>
           </div>
           <ConfigProvider theme={{ algorithm: theme.darkAlgorithm, token: { colorBgContainer: '#111', colorBgLayout: '#0a0a0a', colorBgElevated: '#1a1a1a', colorBorder: '#2a2a2a' } }}>
