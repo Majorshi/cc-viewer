@@ -90,7 +90,7 @@ function TreeDir({ name, node, depth, selectedFile, onFileClick }) {
   );
 }
 
-export default function MobileGitDiff() {
+export default function MobileGitDiff({ visible }) {
   const [changes, setChanges] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -102,7 +102,9 @@ export default function MobileGitDiff() {
 
   useEffect(() => {
     mounted.current = true;
+    if (!visible) return;
     setLoading(true);
+    setError(null);
     fetch(apiUrl('/api/git-status'))
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
@@ -118,7 +120,7 @@ export default function MobileGitDiff() {
         }
       });
     return () => { mounted.current = false; };
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
     if (!selectedFile) {

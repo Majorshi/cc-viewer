@@ -933,7 +933,7 @@ class App extends React.Component {
             <TerminalPanel />
             <div className={`${styles.mobileGitDiffOverlay} ${this.state.mobileGitDiffVisible ? styles.mobileGitDiffOverlayVisible : ''}`}>
               <div className={styles.mobileGitDiffInner}>
-                <MobileGitDiff />
+                <MobileGitDiff visible={this.state.mobileGitDiffVisible} />
               </div>
             </div>
             <div className={`${styles.mobileChatOverlay} ${this.state.mobileChatVisible ? styles.mobileChatOverlayVisible : ''}`}>
