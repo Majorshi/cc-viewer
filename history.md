@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.18 (2026-03-11)
+
+- Improve: compact JSON log format — remove pretty-print indentation to reduce log file size
+- Improve: reduce MAX_LOG_SIZE from 200MB to 150MB
+- Improve: add 300MB total size limit for log merge API
+
 ## 1.5.17 (2026-03-11)
 
 - Fix: iOS terminal severe lag — skip WebGL renderer on iOS, fall back to Canvas rendering

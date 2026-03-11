@@ -207,7 +207,7 @@ export function resetWorkspace() {
   LOG_FILE = '';
 }
 
-const MAX_LOG_SIZE = 200 * 1024 * 1024; // 200MB
+const MAX_LOG_SIZE = 150 * 1024 * 1024; // 150MB
 
 const SUBAGENT_SYSTEM_RE = /command execution specialist|file search specialist|planning specialist|general-purpose agent/i;
 
@@ -617,7 +617,7 @@ export function setupInterceptor() {
     // 在发起请求前先写入一条未完成的条目，让前端可以检测在途请求
     if (requestEntry) {
       try {
-        appendFileSync(LOG_FILE, JSON.stringify(requestEntry, null, 2) + '\n---\n');
+        appendFileSync(LOG_FILE, JSON.stringify(requestEntry) + '\n---\n');
       } catch { }
     }
 
@@ -682,12 +682,12 @@ export function setupInterceptor() {
                       // 移除在途请求标记，保持原始报文
                       delete requestEntry.inProgress;
                       delete requestEntry.requestId;
-                      appendFileSync(LOG_FILE, JSON.stringify(requestEntry, null, 2) + '\n---\n');
+                      appendFileSync(LOG_FILE, JSON.stringify(requestEntry) + '\n---\n');
                     } catch (err) {
                       requestEntry.response.body = streamedContent.slice(0, 1000);
                       delete requestEntry.inProgress;
                       delete requestEntry.requestId;
-                      appendFileSync(LOG_FILE, JSON.stringify(requestEntry, null, 2) + '\n---\n');
+                      appendFileSync(LOG_FILE, JSON.stringify(requestEntry) + '\n---\n');
                     }
                     controller.close();
                     break;
@@ -717,7 +717,7 @@ export function setupInterceptor() {
           };
           delete requestEntry.inProgress;
           delete requestEntry.requestId;
-          appendFileSync(LOG_FILE, JSON.stringify(requestEntry, null, 2) + '\n---\n');
+          appendFileSync(LOG_FILE, JSON.stringify(requestEntry) + '\n---\n');
         }
       } else {
         // 对于非流式响应，可以安全读取body
@@ -741,11 +741,11 @@ export function setupInterceptor() {
           delete requestEntry.inProgress;
           delete requestEntry.requestId;
 
-          appendFileSync(LOG_FILE, JSON.stringify(requestEntry, null, 2) + '\n---\n');
+          appendFileSync(LOG_FILE, JSON.stringify(requestEntry) + '\n---\n');
         } catch (err) {
           delete requestEntry.inProgress;
           delete requestEntry.requestId;
-          appendFileSync(LOG_FILE, JSON.stringify(requestEntry, null, 2) + '\n---\n');
+          appendFileSync(LOG_FILE, JSON.stringify(requestEntry) + '\n---\n');
         }
       }
     }

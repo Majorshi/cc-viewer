@@ -1438,7 +1438,18 @@ async function handleRequest(req, res) {
             return;
           }
         }
-        // files 已按时间正序传入，合并内容写入第一个文件
+        // files 已按时间正序传入，校验合并后总大小不超过 300MB
+        const MAX_MERGE_SIZE = 300 * 1024 * 1024;
+        let totalSize = 0;
+        for (const f of files) {
+          totalSize += statSync(join(LOG_DIR, f)).size;
+        }
+        if (totalSize > MAX_MERGE_SIZE) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Merged size (${(totalSize / 1024 / 1024).toFixed(1)}MB) exceeds 300MB limit` }));
+          return;
+        }
+        // 合并内容写入第一个文件
         const targetFile = files[0];
         const targetPath = join(LOG_DIR, targetFile);
         const contents = files.map(f => readFileSync(join(LOG_DIR, f), 'utf-8').trimEnd());

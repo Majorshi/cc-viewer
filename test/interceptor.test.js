@@ -822,8 +822,8 @@ describe('interceptor', () => {
       const entry2 = makeLogEntry({ timestamp: '2026-01-01T00:01:00Z' });
       const logFile = join(tempDir, 'test.jsonl');
 
-      appendFileSync(logFile, JSON.stringify(entry1, null, 2) + '\n---\n');
-      appendFileSync(logFile, JSON.stringify(entry2, null, 2) + '\n---\n');
+      appendFileSync(logFile, JSON.stringify(entry1) + '\n---\n');
+      appendFileSync(logFile, JSON.stringify(entry2) + '\n---\n');
 
       const content = readFileSync(logFile, 'utf-8');
       const parts = content.split('\n---\n').filter(p => p.trim());
