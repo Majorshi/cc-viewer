@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.21 (2026-03-12)
+
+- Refactor: replace hardcoded `@al/xxx` HTTPS cert with plugin hook `httpsOptions` (waterfall)
+- Fix: `/api/local-url` now respects actual server protocol (HTTP/HTTPS) instead of hardcoded `http://`
+
 ## 1.5.20 (2026-03-12)
 
 - Fix: `proxy-errors.js` missing from npm package, causing `ERR_MODULE_NOT_FOUND` when running `ccv -logger`
