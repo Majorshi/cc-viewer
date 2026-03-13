@@ -7,24 +7,48 @@
   height: 100%;
 }
 
-/* Title / brand */
-.titleText {
-  color: #fff;
-  font-size: 18px;
-  cursor: pointer;
+.logoWrap {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  margin-top: 14px;
+}
+
+.logoWrapActive::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: 0;
+  right: -200px;
 }
 
 .logoImage {
   height: 24px;
   width: 24px;
-  margin-right: 6px;
   border-radius: 3px;
-  vertical-align: text-bottom;
+  vertical-align: middle;
+  opacity: 0.75;
+  transition: opacity 0.2s;
+  cursor: pointer;
 }
 
-.titleArrow {
+.logoImageActive {
+  opacity: 1;
+}
+
+/* Compact header buttons */
+.compactBtn {
   font-size: 12px;
-  margin-left: 4px;
+  height: 30px;
+  line-height: 28px;
+}
+
+.compactBtnNoBorder {
+  font-size: 12px;
+  height: 30px;
+  line-height: 28px;
+  border: none;
 }
 
 /* Token stats tag */

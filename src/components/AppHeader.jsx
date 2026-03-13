@@ -1,6 +1,6 @@
 import React from 'react';
-import { Space, Tag, Button, Typography, Dropdown, Popover, Modal, Collapse, Drawer, Switch, Tabs, Spin, Input, Table, message } from 'antd';
-import { MessageOutlined, FileTextOutlined, ImportOutlined, DownOutlined, DashboardOutlined, ExportOutlined, DownloadOutlined, SettingOutlined, BarChartOutlined, CodeOutlined, GlobalOutlined, CopyOutlined, ApiOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined } from '@ant-design/icons';
+import { Space, Tag, Button, Dropdown, Popover, Modal, Collapse, Drawer, Switch, Tabs, Spin, Input, Table, message } from 'antd';
+import { MessageOutlined, FileTextOutlined, ImportOutlined, DashboardOutlined, ExportOutlined, DownloadOutlined, SettingOutlined, BarChartOutlined, CodeOutlined, GlobalOutlined, CopyOutlined, ApiOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { QRCodeCanvas } from 'qrcode.react';
 import { formatTokenCount, computeTokenStats, computeCacheRebuildStats, computeToolUsageStats, computeSkillUsageStats, getModelMaxTokens } from '../utils/helpers';
 import { isSystemText, classifyUserContent, isMainAgent } from '../utils/contentFilter';
@@ -31,12 +31,11 @@ const LANG_OPTIONS = [
   { value: 'uk', short: 'uk', label: 'Українська' },
 ];
 
-const { Text } = Typography;
 
 class AppHeader extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { countdownText: '', promptModalVisible: false, promptData: [], promptViewMode: 'original', settingsDrawerVisible: false, globalSettingsVisible: false, projectStatsVisible: false, projectStats: null, projectStatsLoading: false, localUrl: '', pluginModalVisible: false, pluginsList: [], pluginsDir: '', deleteConfirmVisible: false, deleteTarget: null, processModalVisible: false, processList: [], processLoading: false };
+    this.state = { countdownText: '', promptModalVisible: false, promptData: [], promptViewMode: 'original', settingsDrawerVisible: false, globalSettingsVisible: false, projectStatsVisible: false, projectStats: null, projectStatsLoading: false, localUrl: '', pluginModalVisible: false, pluginsList: [], pluginsDir: '', deleteConfirmVisible: false, deleteTarget: null, processModalVisible: false, processList: [], processLoading: false, logoDropdownOpen: false };
     this._rafId = null;
     this._expiredTimer = null;
     this.updateCountdown = this.updateCountdown.bind(this);
@@ -887,11 +886,10 @@ class AppHeader extends React.Component {
     return (
       <div className={styles.headerBar}>
         <Space size="middle">
-          <Dropdown menu={{ items: menuItems }} trigger={['hover']}>
-            <Text strong className={styles.titleText}>
-              <img src="/favicon.ico" alt="Logo" className={styles.logoImage} />
-              CC-Viewer <DownOutlined className={styles.titleArrow} />
-            </Text>
+          <Dropdown menu={{ items: menuItems }} trigger={['hover']} onOpenChange={(open) => this.setState({ logoDropdownOpen: open })} align={{ offset: [-4, 0] }}>
+            <span className={`${styles.logoWrap}${this.state.logoDropdownOpen ? ` ${styles.logoWrapActive}` : ''}`}>
+              <img src="/favicon.ico" alt="Logo" className={`${styles.logoImage}${this.state.logoDropdownOpen ? ` ${styles.logoImageActive}` : ''}`} />
+            </span>
           </Dropdown>
           <Popover
             content={this.renderTokenStats()}
@@ -964,7 +962,7 @@ class AppHeader extends React.Component {
 
         <Space size="middle">
           {countdownText && (
-            <Tag color={countdownText === t('ui.cacheExpired') ? 'red' : 'green'}>
+            <Tag style={{ background: '#2a2a2a', border: '1px solid #3a3a3a', color: countdownText === t('ui.cacheExpired') ? '#ff6b6b' : '#ccc' }}>
               {t('ui.cacheCountdown', { type: cacheType ? `(${cacheType})` : '' })}
               <strong className={styles.countdownStrong}>{countdownText}</strong>
             </Tag>
@@ -997,6 +995,7 @@ class AppHeader extends React.Component {
               overlayInnerStyle={{ background: '#1e1e1e', border: '1px solid #3a3a3a', borderRadius: 8, padding: '8px 8px' }}
             >
               <Button
+                className={styles.compactBtnNoBorder}
                 icon={
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-3px' }}>
                     <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
@@ -1008,6 +1007,7 @@ class AppHeader extends React.Component {
           )}
           {cliMode && viewMode === 'chat' && !isLocalLog && (
             <Button
+              className={styles.compactBtn}
               type={terminalVisible ? 'primary' : 'default'}
               ghost={terminalVisible}
               icon={<CodeOutlined />}
@@ -1017,6 +1017,7 @@ class AppHeader extends React.Component {
             </Button>
           )}
           <Button
+            className={styles.compactBtn}
             type={viewMode === 'raw' ? 'primary' : 'default'}
             icon={viewMode === 'raw' ? <MessageOutlined /> : <FileTextOutlined />}
             onClick={onToggleViewMode}

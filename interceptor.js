@@ -98,22 +98,14 @@ const _initPromise = (async () => {
   try {
     const recentLog = findRecentLog(_logDir, _projectName);
     if (recentLog) {
-      // Check if file is modified within 1 hour
-      const stats = statSync(recentLog);
-      const now = new Date();
-      const diff = now - stats.mtime;
-      const oneHour = 60 * 60 * 1000;
-
-      if (diff < oneHour) {
-        // 设置临时文件，不阻塞
-        const tempFile = _newLogFile.replace('.jsonl', '_temp.jsonl');
-        LOG_FILE = tempFile;
-        _resumeState = {
-          recentFile: recentLog,
-          recentFileName: basename(recentLog),
-          tempFile,
-        };
-      }
+      // 始终复用最新日志文件
+      const tempFile = _newLogFile.replace('.jsonl', '_temp.jsonl');
+      LOG_FILE = tempFile;
+      _resumeState = {
+        recentFile: recentLog,
+        recentFileName: basename(recentLog),
+        tempFile,
+      };
     }
   } catch { }
 })();
@@ -129,20 +121,13 @@ export function initForWorkspace(projectPath) {
 
   cleanupTempFiles(dir, projectName);
 
-  // 检查是否有最近的日志文件可以复用
+  // 检查是否有最近的日志文件可以复用（始终复用最新日志）
   const recentLog = findRecentLog(dir, projectName);
   if (recentLog) {
-    try {
-      const stats = statSync(recentLog);
-      const diff = Date.now() - stats.mtime.getTime();
-      const oneHour = 60 * 60 * 1000;
-      if (diff < oneHour) {
-        _projectName = projectName;
-        _logDir = dir;
-        LOG_FILE = recentLog;
-        return { filePath: recentLog, dir, projectName, resumed: true };
-      }
-    } catch {}
+    _projectName = projectName;
+    _logDir = dir;
+    LOG_FILE = recentLog;
+    return { filePath: recentLog, dir, projectName, resumed: true };
   }
 
   // 没有最近日志，创建新文件
