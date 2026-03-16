@@ -592,6 +592,8 @@ class ChatView extends React.Component {
 
     // P1: 只允许最后一个 pending 的 ExitPlanMode 卡片交互
     let lastPendingPlanId = null;
+    // P2: 只允许最后一个 pending 的 AskUserQuestion 卡片交互
+    let lastPendingAskId = null;
     for (const msg of messages) {
       if (msg.role === 'assistant' && Array.isArray(msg.content)) {
         for (const block of msg.content) {
@@ -599,6 +601,12 @@ class ChatView extends React.Component {
             const approval = planApprovalMap[block.id];
             if (!approval || approval.status === 'pending') {
               lastPendingPlanId = block.id;
+            }
+          }
+          if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+            const answers = askAnswerMap[block.id];
+            if (!answers || Object.keys(answers).length === 0) {
+              lastPendingAskId = block.id;
             }
           }
         }
@@ -654,11 +662,11 @@ class ChatView extends React.Component {
       } else if (msg.role === 'assistant') {
         if (Array.isArray(content)) {
           renderedMessages.push(
-            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={content} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={askAnswerMap} planApprovalMap={planApprovalMap} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} lastPendingPlanId={lastPendingPlanId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} cliMode={this.props.cliMode} {...viewReqProps} />
+            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={content} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={askAnswerMap} planApprovalMap={planApprovalMap} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} lastPendingPlanId={lastPendingPlanId} lastPendingAskId={lastPendingAskId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onAskQuestionSubmit={this.handleAskQuestionSubmit} cliMode={this.props.cliMode} {...viewReqProps} />
           );
         } else if (typeof content === 'string') {
           renderedMessages.push(
-            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={[{ type: 'text', text: content }]} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={askAnswerMap} planApprovalMap={planApprovalMap} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} lastPendingPlanId={lastPendingPlanId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} cliMode={this.props.cliMode} {...viewReqProps} />
+            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={[{ type: 'text', text: content }]} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={askAnswerMap} planApprovalMap={planApprovalMap} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} lastPendingPlanId={lastPendingPlanId} lastPendingAskId={lastPendingAskId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onAskQuestionSubmit={this.handleAskQuestionSubmit} cliMode={this.props.cliMode} {...viewReqProps} />
           );
         }
       }
@@ -939,10 +947,14 @@ class ChatView extends React.Component {
       }
     }
     // No match — if there was an active prompt, mark it dismissed
-    // But keep plan approval prompts active so ExitPlanMode buttons remain visible
+    // But keep plan approval prompts and AskUserQuestion prompts active
     if (this.state.ptyPrompt) {
       if (isPlanApprovalPrompt(this.state.ptyPrompt)) {
         // Don't dismiss plan approval prompts — they stay active until explicitly answered
+        return;
+      }
+      if (this._askSubmitting) {
+        // Don't dismiss prompts during AskUserQuestion submission
         return;
       }
       this.setState(state => {
@@ -1062,6 +1074,198 @@ class ChatView extends React.Component {
     this._ptyBuffer = '';
     if (this._ptyDebounceTimer) clearTimeout(this._ptyDebounceTimer);
   };
+
+  /**
+   * AskUserQuestion 交互提交
+   * answers: [{ questionIndex, type: 'single'|'multi'|'other', optionIndex, selectedIndices, text }]
+   */
+  handleAskQuestionSubmit = (answers) => {
+    const ws = this._inputWs;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!this.state.ptyPrompt) return;
+
+    this._askAnswerQueue = [...answers];
+    this._askSubmitting = true;
+    this._processNextAskAnswer();
+  };
+
+  _processNextAskAnswer() {
+    if (!this._askAnswerQueue || this._askAnswerQueue.length === 0) {
+      this._askSubmitting = false;
+      return;
+    }
+    const answer = this._askAnswerQueue.shift();
+    if (answer.type === 'other') {
+      this._submitOtherAnswer(answer);
+    } else if (answer.type === 'multi') {
+      this._submitMultiSelectAnswer(answer);
+    } else {
+      this._submitSingleSelectAnswer(answer);
+    }
+  }
+
+  _submitSingleSelectAnswer(answer) {
+    const ws = this._inputWs;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { this._askSubmitting = false; return; }
+    const prompt = this.state.ptyPrompt;
+    if (!prompt) { this._askSubmitting = false; return; }
+
+    // optionIndex is 0-based index into the CLI option list; option number = optionIndex + 1
+    const targetNumber = answer.optionIndex + 1;
+    const options = prompt.options;
+    const targetIdx = options.findIndex(o => o.number === targetNumber);
+    let currentIdx = options.findIndex(o => o.selected);
+    if (currentIdx < 0) currentIdx = 0;
+
+    const diff = targetIdx - currentIdx;
+    const arrowKey = diff > 0 ? '\x1b[B' : '\x1b[A';
+    const steps = Math.abs(diff);
+
+    const sendStep = (i) => {
+      if (i < steps) {
+        ws.send(JSON.stringify({ type: 'input', data: arrowKey }));
+        setTimeout(() => sendStep(i + 1), 30);
+      } else {
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data: '\r' }));
+          }
+          this._finishCurrentAskAnswer();
+        }, 50);
+      }
+    };
+    sendStep(0);
+  }
+
+  _submitMultiSelectAnswer(answer) {
+    const ws = this._inputWs;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { this._askSubmitting = false; return; }
+    const prompt = this.state.ptyPrompt;
+    if (!prompt) { this._askSubmitting = false; return; }
+
+    // selectedIndices: 0-based indices into CLI option list
+    const indices = (answer.selectedIndices || []).slice().sort((a, b) => a - b);
+    const options = prompt.options;
+    let currentIdx = options.findIndex(o => o.selected);
+    if (currentIdx < 0) currentIdx = 0;
+
+    // Navigate to each selected option and press Space to toggle
+    const toggleNext = (si) => {
+      if (si >= indices.length) {
+        // All selections made, press Enter to confirm
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data: '\r' }));
+          }
+          this._finishCurrentAskAnswer();
+        }, 50);
+        return;
+      }
+      const targetIdx = indices[si];
+      const diff = targetIdx - currentIdx;
+      const arrowKey = diff > 0 ? '\x1b[B' : '\x1b[A';
+      const steps = Math.abs(diff);
+
+      const moveAndToggle = (step) => {
+        if (step < steps) {
+          ws.send(JSON.stringify({ type: 'input', data: arrowKey }));
+          setTimeout(() => moveAndToggle(step + 1), 30);
+        } else {
+          // Press Space to toggle
+          setTimeout(() => {
+            ws.send(JSON.stringify({ type: 'input', data: ' ' }));
+            currentIdx = targetIdx;
+            setTimeout(() => toggleNext(si + 1), 50);
+          }, 50);
+        }
+      };
+      moveAndToggle(0);
+    };
+    toggleNext(0);
+  }
+
+  _submitOtherAnswer(answer) {
+    const ws = this._inputWs;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { this._askSubmitting = false; return; }
+    const prompt = this.state.ptyPrompt;
+    if (!prompt) { this._askSubmitting = false; return; }
+
+    // "Other" is always the last option in the CLI list
+    const options = prompt.options;
+    const targetIdx = options.length - 1;
+    let currentIdx = options.findIndex(o => o.selected);
+    if (currentIdx < 0) currentIdx = 0;
+
+    const diff = targetIdx - currentIdx;
+    const arrowKey = diff > 0 ? '\x1b[B' : '\x1b[A';
+    const steps = Math.abs(diff);
+
+    const sendStep = (i) => {
+      if (i < steps) {
+        ws.send(JSON.stringify({ type: 'input', data: arrowKey }));
+        setTimeout(() => sendStep(i + 1), 30);
+      } else {
+        // Press Enter to select "Other"
+        setTimeout(() => {
+          ws.send(JSON.stringify({ type: 'input', data: '\r' }));
+          // Wait for CLI to enter text input mode, then type the text
+          const startBuf = this._ptyBuffer;
+          let attempts = 0;
+          const poll = () => {
+            attempts++;
+            if (attempts > 20 || this._ptyBuffer !== startBuf) {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'input', data: answer.text }));
+                setTimeout(() => {
+                  ws.send(JSON.stringify({ type: 'input', data: '\r' }));
+                  this._finishCurrentAskAnswer();
+                }, 50);
+              }
+              return;
+            }
+            setTimeout(poll, 100);
+          };
+          setTimeout(poll, 100);
+        }, 50);
+      }
+    };
+    sendStep(0);
+  }
+
+  _finishCurrentAskAnswer() {
+    // Mark current prompt as answered and clear buffer
+    this.setState(state => {
+      const history = state.ptyPromptHistory.slice();
+      const last = history[history.length - 1];
+      if (last && last.status === 'active') {
+        history[history.length - 1] = { ...last, status: 'answered' };
+      }
+      return { ptyPrompt: null, ptyPromptHistory: history };
+    });
+    this._ptyBuffer = '';
+    if (this._ptyDebounceTimer) clearTimeout(this._ptyDebounceTimer);
+
+    // Wait for next prompt to appear (multi-question scenario)
+    if (this._askAnswerQueue && this._askAnswerQueue.length > 0) {
+      let waitAttempts = 0;
+      const waitForNext = () => {
+        waitAttempts++;
+        if (waitAttempts > 100) { // 10s timeout
+          this._askSubmitting = false;
+          this._askAnswerQueue = [];
+          return;
+        }
+        if (this.state.ptyPrompt) {
+          this._processNextAskAnswer();
+          return;
+        }
+        setTimeout(waitForNext, 100);
+      };
+      setTimeout(waitForNext, 200);
+    } else {
+      this._askSubmitting = false;
+    }
+  }
 
   handleInputSend = () => {
     const textarea = this._inputRef.current;

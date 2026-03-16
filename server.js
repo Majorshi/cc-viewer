@@ -40,7 +40,7 @@ import { checkAndUpdate } from './lib/updater.js';
 import { loadPlugins, runWaterfallHook, runParallelHook, getPluginsInfo, PLUGINS_DIR } from './lib/plugin-loader.js';
 import { getUserProfile } from './lib/user-profile.js';
 import { getGitDiffs } from './lib/git-diff.js';
-import { watchContextWindow, installStatusLine, uninstallStatusLine, CONTEXT_WINDOW_FILE } from './lib/context-watcher.js';
+import { watchContextWindow, CONTEXT_WINDOW_FILE } from './lib/context-watcher.js';
 import { readLogFile, watchLogFile, startWatching, getWatchedFiles } from './lib/log-watcher.js';
 
 const PREFS_FILE = join(LOG_DIR, 'preferences.json');
@@ -1704,7 +1704,7 @@ export async function startViewer() {
           } catch { }
           // 工作区模式下延迟到选择工作区后再启动监听
           if (!isWorkspaceMode) {
-            startWatching({ ..._logWatcherOpts(LOG_FILE), installStatusLine, watchContextWindow });
+            startWatching({ ..._logWatcherOpts(LOG_FILE), watchContextWindow });
             startStatsWorker();
           }
           // CLI 模式下启动 WebSocket 服务
@@ -1895,7 +1895,6 @@ async function _doStop() {
     unwatchFile(logFile);
   }
   unwatchFile(CONTEXT_WINDOW_FILE);
-  uninstallStatusLine();
   getWatchedFiles().clear();
   clients.forEach(client => client.end());
   clients = [];
@@ -1944,8 +1943,6 @@ function handleExit() {
       }
     } catch { }
   }
-  // 确保异常退出时也还原 statusLine
-  uninstallStatusLine();
 }
 process.on('exit', handleExit);
 process.on('SIGINT', () => { stopViewer().finally(() => process.exit()); });

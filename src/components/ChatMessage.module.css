@@ -595,3 +595,109 @@
 .planFeedbackCancelBtn:hover {
   background: rgba(107, 114, 128, 0.3);
 }
+
+/* === AskUserQuestion 交互模式 === */
+
+.askQuestionInteractive {
+  background: #0d1528;
+  border: 1px solid #1668dc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.askRadioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 4px;
+  margin-top: 4px;
+}
+
+.askRadioGroup :global(.ant-radio-wrapper),
+.askCheckboxGroup :global(.ant-checkbox-wrapper) {
+  color: #d1d5db;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.askCheckboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 4px;
+  margin-top: 4px;
+}
+
+.askOtherInput {
+  margin-top: 4px;
+  margin-left: 24px;
+  width: calc(100% - 24px);
+}
+
+.askOtherInput :global(.ant-input) {
+  background: #1f2937;
+  border-color: #4b5563;
+  color: #e5e7eb;
+  font-size: 12px;
+}
+
+.askSubmitRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.askSubmitBtn {
+  padding: 4px 20px;
+  border-radius: 4px;
+  border: 1px solid #1668dc;
+  background: rgba(22, 104, 220, 0.2);
+  color: #60a5fa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.askSubmitBtn:hover {
+  background: rgba(22, 104, 220, 0.35);
+}
+
+.askSubmitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.askMarkdownLayout {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.askMarkdownLayout > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.askMarkdownPreview {
+  flex: 1;
+  min-width: 0;
+  background: #0d1117;
+  border: 1px solid #2a2a3e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #d1d5db;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.askMarkdownPreview pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}

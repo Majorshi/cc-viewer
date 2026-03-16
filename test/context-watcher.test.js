@@ -1,156 +1,120 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { installStatusLine, uninstallStatusLine, CLAUDE_SETTINGS_FILE } from '../lib/context-watcher.js';
+import { updateContextWindowFromResponse, CONTEXT_WINDOW_FILE } from '../lib/context-watcher.js';
 
 const CLAUDE_DIR = join(homedir(), '.claude');
-const CCV_STATUSLINE_SCRIPT = join(CLAUDE_DIR, 'ccv-statusline.sh');
 
-let savedSettings = null;
-let settingsExisted = false;
-let savedScript = null;
-let scriptExisted = false;
+// 备份和恢复 context-window.json
+let savedContextFile = null;
+let contextFileExisted = false;
 
-function backup() {
+function backupContextFile() {
   try {
-    settingsExisted = existsSync(CLAUDE_SETTINGS_FILE);
-    if (settingsExisted) savedSettings = readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8');
-  } catch { }
-  try {
-    scriptExisted = existsSync(CCV_STATUSLINE_SCRIPT);
-    if (scriptExisted) savedScript = readFileSync(CCV_STATUSLINE_SCRIPT, 'utf-8');
+    contextFileExisted = existsSync(CONTEXT_WINDOW_FILE);
+    if (contextFileExisted) savedContextFile = readFileSync(CONTEXT_WINDOW_FILE, 'utf-8');
   } catch { }
 }
 
-function restore() {
+function restoreContextFile() {
   try {
-    if (settingsExisted && savedSettings !== null) {
-      writeFileSync(CLAUDE_SETTINGS_FILE, savedSettings);
-    } else if (!settingsExisted && existsSync(CLAUDE_SETTINGS_FILE)) {
-      // Restore to original state — rewrite without our statusLine
-      // But safer: just restore original content or remove if it didn't exist
-      try {
-        const current = JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'));
-        if (current.statusLine?.command?.includes('ccv-statusline')) {
-          delete current.statusLine;
-          writeFileSync(CLAUDE_SETTINGS_FILE, JSON.stringify(current, null, 2) + '\n');
-        }
-      } catch { }
+    if (contextFileExisted && savedContextFile !== null) {
+      writeFileSync(CONTEXT_WINDOW_FILE, savedContextFile);
+    } else if (!contextFileExisted && existsSync(CONTEXT_WINDOW_FILE)) {
+      unlinkSync(CONTEXT_WINDOW_FILE);
     }
   } catch { }
-  try {
-    if (!scriptExisted && existsSync(CCV_STATUSLINE_SCRIPT)) {
-      unlinkSync(CCV_STATUSLINE_SCRIPT);
-    } else if (scriptExisted && savedScript !== null) {
-      writeFileSync(CCV_STATUSLINE_SCRIPT, savedScript);
-    }
-  } catch { }
-  savedSettings = null;
-  savedScript = null;
+  savedContextFile = null;
 }
 
-describe('context-watcher: installStatusLine', () => {
-  beforeEach(() => { backup(); });
-  afterEach(() => {
-    // Always uninstall first to reset internal state
-    uninstallStatusLine();
-    restore();
-  });
+describe('context-watcher: updateContextWindowFromResponse', () => {
+  it('writes context_window data from API response usage', () => {
+    backupContextFile();
+    try {
+      mkdirSync(CLAUDE_DIR, { recursive: true });
+      // 清理旧文件
+      if (existsSync(CONTEXT_WINDOW_FILE)) unlinkSync(CONTEXT_WINDOW_FILE);
 
-  it('creates statusLine in settings.json and script file', () => {
-    mkdirSync(CLAUDE_DIR, { recursive: true });
-    // Start with clean settings (no statusLine)
-    const baseSettings = {};
-    if (existsSync(CLAUDE_SETTINGS_FILE)) {
-      Object.assign(baseSettings, JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8')));
+      const responseBody = {
+        usage: {
+          input_tokens: 5000,
+          output_tokens: 1000,
+          cache_creation_input_tokens: 200,
+          cache_read_input_tokens: 3000,
+        },
+      };
+
+      updateContextWindowFromResponse(responseBody, { model: 'claude-sonnet-4-6' }, 'claude-sonnet-4-6');
+
+      assert.ok(existsSync(CONTEXT_WINDOW_FILE), 'context-window.json should be created');
+      const data = JSON.parse(readFileSync(CONTEXT_WINDOW_FILE, 'utf-8'));
+      assert.ok(data.context_window, 'should have context_window field');
+      assert.equal(data.context_window.total_input_tokens, 8200); // 5000 + 200 + 3000
+      assert.equal(data.context_window.total_output_tokens, 1000);
+      assert.equal(data.context_window.context_window_size, 200000);
+      assert.equal(data.context_window.used_percentage, 5); // (9200 / 200000) * 100 ≈ 5
+    } finally {
+      restoreContextFile();
     }
-    delete baseSettings.statusLine;
-    writeFileSync(CLAUDE_SETTINGS_FILE, JSON.stringify(baseSettings, null, 2) + '\n');
-
-    installStatusLine();
-
-    assert.ok(existsSync(CCV_STATUSLINE_SCRIPT), 'script file should be created');
-    const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'));
-    assert.equal(settings.statusLine?.type, 'command');
-    assert.ok(settings.statusLine.command.includes('ccv-statusline'));
-
-    const script = readFileSync(CCV_STATUSLINE_SCRIPT, 'utf-8');
-    assert.ok(script.includes('#!/usr/bin/env bash'));
-    assert.ok(script.includes('context-window.json'));
   });
 
-  it('chains existing statusLine command', () => {
-    mkdirSync(CLAUDE_DIR, { recursive: true });
-    const baseSettings = existsSync(CLAUDE_SETTINGS_FILE)
-      ? JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'))
-      : {};
-    baseSettings.statusLine = { type: 'command', command: '/usr/bin/my-status' };
-    writeFileSync(CLAUDE_SETTINGS_FILE, JSON.stringify(baseSettings, null, 2) + '\n');
+  it('infers 1M context window from model name with size tag', () => {
+    backupContextFile();
+    try {
+      mkdirSync(CLAUDE_DIR, { recursive: true });
+      if (existsSync(CONTEXT_WINDOW_FILE)) unlinkSync(CONTEXT_WINDOW_FILE);
 
-    installStatusLine();
+      const responseBody = {
+        usage: { input_tokens: 50000, output_tokens: 10000 },
+      };
 
-    const script = readFileSync(CCV_STATUSLINE_SCRIPT, 'utf-8');
-    assert.ok(script.includes('/usr/bin/my-status'), 'should chain original command');
+      updateContextWindowFromResponse(responseBody, {}, 'claude-opus-4-6[1m]');
+
+      const data = JSON.parse(readFileSync(CONTEXT_WINDOW_FILE, 'utf-8'));
+      assert.equal(data.context_window.context_window_size, 1000000);
+      assert.equal(data.context_window.used_percentage, 6); // (60000 / 1000000) * 100 = 6
+    } finally {
+      restoreContextFile();
+    }
   });
 
-  it('handles re-install when ccv-statusline already present', () => {
-    mkdirSync(CLAUDE_DIR, { recursive: true });
-    const baseSettings = existsSync(CLAUDE_SETTINGS_FILE)
-      ? JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'))
-      : {};
-    baseSettings.statusLine = { type: 'command', command: CCV_STATUSLINE_SCRIPT };
-    writeFileSync(CLAUDE_SETTINGS_FILE, JSON.stringify(baseSettings, null, 2) + '\n');
+  it('preserves existing fields in context-window.json', () => {
+    backupContextFile();
+    try {
+      mkdirSync(CLAUDE_DIR, { recursive: true });
+      // 写入一些已有数据（模拟 Claude Code statusLine 写入的）
+      const existing = { session_id: 'test-123', model: { id: 'opus' } };
+      writeFileSync(CONTEXT_WINDOW_FILE, JSON.stringify(existing) + '\n');
 
-    installStatusLine();
+      const responseBody = {
+        usage: { input_tokens: 1000, output_tokens: 500 },
+      };
 
-    const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'));
-    assert.ok(settings.statusLine.command.includes('ccv-statusline'));
-  });
-});
+      updateContextWindowFromResponse(responseBody, {}, 'claude-sonnet-4-6');
 
-describe('context-watcher: uninstallStatusLine', () => {
-  beforeEach(() => { backup(); });
-  afterEach(() => { restore(); });
-
-  it('restores original statusLine after uninstall', () => {
-    mkdirSync(CLAUDE_DIR, { recursive: true });
-    const baseSettings = existsSync(CLAUDE_SETTINGS_FILE)
-      ? JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'))
-      : {};
-    baseSettings.statusLine = { type: 'command', command: '/usr/bin/original' };
-    writeFileSync(CLAUDE_SETTINGS_FILE, JSON.stringify(baseSettings, null, 2) + '\n');
-
-    installStatusLine();
-    uninstallStatusLine();
-
-    const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'));
-    assert.equal(settings.statusLine?.command, '/usr/bin/original');
-    assert.ok(!existsSync(CCV_STATUSLINE_SCRIPT), 'script should be removed');
+      const data = JSON.parse(readFileSync(CONTEXT_WINDOW_FILE, 'utf-8'));
+      assert.equal(data.session_id, 'test-123', 'should preserve existing session_id');
+      assert.equal(data.model.id, 'opus', 'should preserve existing model');
+      assert.ok(data.context_window, 'should have new context_window');
+    } finally {
+      restoreContextFile();
+    }
   });
 
-  it('deletes statusLine key when no original existed', () => {
-    mkdirSync(CLAUDE_DIR, { recursive: true });
-    const baseSettings = existsSync(CLAUDE_SETTINGS_FILE)
-      ? JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'))
-      : {};
-    delete baseSettings.statusLine;
-    writeFileSync(CLAUDE_SETTINGS_FILE, JSON.stringify(baseSettings, null, 2) + '\n');
+  it('does nothing when response has no usage', () => {
+    backupContextFile();
+    try {
+      mkdirSync(CLAUDE_DIR, { recursive: true });
+      if (existsSync(CONTEXT_WINDOW_FILE)) unlinkSync(CONTEXT_WINDOW_FILE);
 
-    installStatusLine();
-    uninstallStatusLine();
+      updateContextWindowFromResponse({ id: 'msg_123' }, {}, 'claude-sonnet-4-6');
 
-    const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS_FILE, 'utf-8'));
-    assert.equal(settings.statusLine, undefined, 'statusLine should be removed');
-  });
-
-  it('is a no-op when never installed', () => {
-    // Fresh module state — _originalStatusLine is undefined
-    // uninstallStatusLine should return immediately without error
-    // Note: since installStatusLine was called in previous tests,
-    // we need a fresh import. Instead, just verify it doesn't throw.
-    uninstallStatusLine();
-    assert.ok(true, 'should not throw');
+      // Should not create file when no usage data
+      assert.ok(!existsSync(CONTEXT_WINDOW_FILE), 'should not create file without usage');
+    } finally {
+      restoreContextFile();
+    }
   });
 });
