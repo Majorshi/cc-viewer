@@ -14,7 +14,7 @@ import MobileGitDiff from './components/MobileGitDiff';
 import MobileStats from './components/MobileStats';
 import WorkspaceList from './components/WorkspaceList';
 import { t, getLang, setLang } from './i18n';
-import { formatTokenCount, filterRelevantRequests, findPrevMainAgentTimestamp, buildCacheLossMap } from './utils/helpers';
+import { formatTokenCount, filterRelevantRequests, findPrevMainAgentTimestamp, appendCacheLossMap } from './utils/helpers';
 import { isMainAgent, isSystemText, classifyUserContent } from './utils/contentFilter';
 import { classifyRequest } from './utils/requestType';
 import styles from './App.module.css';
@@ -80,6 +80,9 @@ class App extends React.Component {
     this._flushRafId = null;
     // P0 perf: pre-computed cache loss map
     this._cacheLossMap = new Map();
+    this._cacheLossProcessedCount = 0;
+    this._cacheLossLastMainAgent = null;
+    this._cacheLossShowAll = undefined;
   }
 
   /** Rebuild the O(1) request dedup index from a full entries array. */
@@ -89,6 +92,10 @@ class App extends React.Component {
       const e = entries[i];
       this._requestIndexMap.set(`${e.timestamp}|${e.url}`, i);
     }
+    // Reset incremental cache loss state — next render will do a full pass
+    this._cacheLossProcessedCount = 0;
+    this._cacheLossLastMainAgent = null;
+    this._cacheLossMap = new Map();
   }
 
   componentDidMount() {
@@ -544,9 +551,6 @@ class App extends React.Component {
           mainAgentSessions = this.mergeMainAgentSessions(mainAgentSessions, entry);
         }
       }
-
-      // Invalidate cache loss map so render() recomputes it
-      this._cacheLossMapSource = null;
 
       let selectedIndex = prev.selectedIndex;
 
@@ -1343,10 +1347,27 @@ class App extends React.Component {
     }
     const filteredRequests = this._filteredRequests;
 
-    // P0 perf: compute cache loss map from filtered list (O(n) vs old O(n²))
-    if (this._cacheLossMapSource !== filteredRequests) {
-      this._cacheLossMapSource = filteredRequests;
-      this._cacheLossMap = buildCacheLossMap(filteredRequests);
+    // P0 perf: incremental cache loss map — only process new entries
+    if (this._cacheLossShowAll !== showAll) {
+      // showAll toggled → full recompute (rare)
+      this._cacheLossShowAll = showAll;
+      this._cacheLossMap = new Map();
+      this._cacheLossLastMainAgent = null;
+      this._cacheLossProcessedCount = 0;
+    }
+    if (filteredRequests.length < this._cacheLossProcessedCount) {
+      // full_reload shrunk the array → full recompute
+      this._cacheLossMap = new Map();
+      this._cacheLossLastMainAgent = null;
+      this._cacheLossProcessedCount = 0;
+    }
+    if (filteredRequests.length > this._cacheLossProcessedCount) {
+      // incremental: only process newly appended entries
+      this._cacheLossLastMainAgent = appendCacheLossMap(
+        this._cacheLossMap, filteredRequests,
+        this._cacheLossProcessedCount, this._cacheLossLastMainAgent
+      );
+      this._cacheLossProcessedCount = filteredRequests.length;
     }
 
     const selectedRequest = selectedIndex !== null ? filteredRequests[selectedIndex] : null;

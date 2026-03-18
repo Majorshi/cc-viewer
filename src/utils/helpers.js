@@ -27,13 +27,12 @@ export function getModelMaxTokens(modelName) {
 }
 
 /**
- * Pre-compute cache loss analysis for all requests in a single forward pass.
- * Returns Map<index, { reason, reasons }> — O(n) total instead of O(n²).
+ * Incrementally append cache loss entries to an existing map.
+ * Scans from startIndex to end; uses prevMainAgent as comparison baseline.
+ * Returns the last mainAgent entry encountered (for next incremental call).
  */
-export function buildCacheLossMap(requests) {
-  const map = new Map();
-  let prevMainAgent = null;
-  for (let i = 0; i < requests.length; i++) {
+export function appendCacheLossMap(map, requests, startIndex, prevMainAgent) {
+  for (let i = startIndex; i < requests.length; i++) {
     const req = requests[i];
     if (!isMainAgent(req)) continue;
 
@@ -50,6 +49,16 @@ export function buildCacheLossMap(requests) {
     }
     prevMainAgent = req;
   }
+  return prevMainAgent;
+}
+
+/**
+ * Pre-compute cache loss analysis for all requests in a single forward pass.
+ * Returns Map<index, { reason, reasons }> — O(n) total instead of O(n²).
+ */
+export function buildCacheLossMap(requests) {
+  const map = new Map();
+  appendCacheLossMap(map, requests, 0, null);
   return map;
 }
 
