@@ -21,18 +21,25 @@ export function getSystemText(body) {
   return '';
 }
 
+// WeakMap cache for isTeammate — avoids redundant getSystemText + regex per request
+const _isTeammateCache = new WeakMap();
+
 /**
  * 判断请求是否为 Teammate 子进程的请求。
- * 支持两种检测：interceptor 模式（req.teammate 字段）和 proxy 模式（system prompt 标记）。
+ * 支持两种检测：interceptor ���式（req.teammate 字段）和 proxy 模式（system prompt 标记）。
  * 全局唯一入口，与 isMainAgent 同级。
  */
 export function isTeammate(req) {
   if (!req) return false;
+  const cached = _isTeammateCache.get(req);
+  if (cached !== undefined) return cached;
   // interceptor 模式：通过 process.argv 写入的 teammate 字段
-  if (req.teammate) return true;
+  if (req.teammate) { _isTeammateCache.set(req, true); return true; }
   // proxy 模式：通过 system prompt 检测
   const sysText = getSystemText(req.body || {});
-  return TEAMMATE_SYSTEM_RE.test(sysText);
+  const result = TEAMMATE_SYSTEM_RE.test(sysText);
+  _isTeammateCache.set(req, result);
+  return result;
 }
 
 // WeakMap cache for isMainAgent — avoids redundant regex/array work across call sites

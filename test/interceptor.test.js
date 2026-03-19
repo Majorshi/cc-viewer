@@ -634,8 +634,9 @@ describe('interceptor', () => {
       const newParts = readFileSync(newFile, 'utf-8').split('\n---\n').filter(p => p.trim());
       assert.equal(newParts.length, 3); // preflight + origin + follow
 
-      // 所有内容迁移后旧文件被删除
-      assert.ok(!existsSync(oldFile));
+      // 所有内容迁移后旧文件被清空（不删除，watcher 需要检��� truncation）
+      assert.ok(existsSync(oldFile));
+      assert.strictEqual(readFileSync(oldFile, 'utf-8'), '');
     });
 
     it('does nothing when no mainAgent with single message found', () => {
@@ -673,8 +674,9 @@ describe('interceptor', () => {
 
       const newContent = readFileSync(newFile, 'utf-8');
       assert.ok(newContent.includes('start'));
-      // 所有内容迁移后旧文件被删除
-      assert.ok(!existsSync(oldFile));
+      // 所有内容迁移后旧文件被清空（不删除，watcher 需要检测 truncation）
+      assert.ok(existsSync(oldFile));
+      assert.strictEqual(readFileSync(oldFile, 'utf-8'), '');
     });
 
     it('handles corrupted JSON lines gracefully', () => {

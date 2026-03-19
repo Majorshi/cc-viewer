@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.11 (2026-03-20)
+
+- Fix: full-chain real-time conversation refresh — teammate detection expanded to `--agent-name` (native team mode), metadata extraction no longer gated by `_isTeammate`
+- Fix: teammate processes no longer trigger log rotation — only leader rotates
+- Fix: `migrateConversationContext` truncates old file instead of deleting, preventing watcher `statSync` errors
+- Fix: log-watcher truncation handler immediately checks `getLogFile()` for rotation and switches watcher
+- Perf: `_reqScanCache` split into independent counters — `subAgentEntries` full-rescans on request changes without O(n²) on `tsToIndex`
+- Perf: `appendToolResultMap` — hoist `split('\n')` out of loop to avoid O(L²)
+- Perf: `isTeammate` WeakMap cache, `extractTeammateName` per-request cache
+
 ## 1.6.10 (2026-03-20)
 
 - Feature: extract teammate name from SendMessage `tool_result` — `routing.sender` field provides reliable structured name, replacing fallback "X" display

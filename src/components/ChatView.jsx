@@ -144,8 +144,9 @@ function appendToolResultMap(state, messages, startIndex) {
               const existing = _fileState[matchedTool.input.file_path];
               if (existing) {
                 const mergedMap = new Map();
+                const existingLines = existing.plainText.split('\n');
                 for (let j = 0; j < existing.lineNums.length; j++) {
-                  mergedMap.set(existing.lineNums[j], existing.plainText.split('\n')[j]);
+                  mergedMap.set(existing.lineNums[j], existingLines[j]);
                 }
                 for (let j = 0; j < lineNums.length; j++) {
                   mergedMap.set(lineNums[j], plainLines[j]);
@@ -385,7 +386,7 @@ class ChatView extends React.Component {
         this._incToolProcessedCount = 0;
         this._incToolSessionIdx = -1;
         this._prevSessions = this.props.mainAgentSessions;
-        this._reqScanCache = { tsToIndex: {}, modelName: null, subAgentEntries: [], processedCount: 0 };
+        this._reqScanCache = { tsToIndex: {}, modelName: null, subAgentEntries: [], processedCount: 0, subAgentProcessedCount: 0 };
       }
       if (isMobile) this._mobileExtraItems = 0;
       this.startRender();
@@ -395,9 +396,11 @@ class ChatView extends React.Component {
       this._updateSuggestion();
       this._checkToolFileChanges();
     } else if (prevProps.requests !== this.props.requests) {
-      // SubAgent / Teammate 请求到达但 mainAgentSessions 未变 → 重置 requests 缓存并重建
-      // 必须重置：teammate response 可能是更新已有条目（长度不变），增量扫描会跳过
-      this._reqScanCache = { tsToIndex: {}, modelName: null, subAgentEntries: [], processedCount: 0 };
+      // SubAgent / Teammate 请求到达但 mainAgentSessions 未变
+      // subAgentEntries 必须全量重扫：response 可能原地更新已有条目
+      // tsToIndex / modelName 只追加不修改，保持增量
+      this._reqScanCache.subAgentEntries = [];
+      this._reqScanCache.subAgentProcessedCount = 0;
       this.startRender();
     } else if (prevProps.collapseToolResults !== this.props.collapseToolResults || prevProps.expandThinking !== this.props.expandThinking) {
       const rawItems = this.buildAllItems();
@@ -729,14 +732,14 @@ class ChatView extends React.Component {
     this._lastResponseItems = null;
     if (!mainAgentSessions || mainAgentSessions.length === 0) return [];
 
-    // 单 pass 增量扫描 requests（tsToIndex + modelName + subAgentEntries）
+    // 增量扫描 requests（tsToIndex + modelName 增量，subAgentEntries 可按需全量重扫）
     const cache = this._reqScanCache;
     if (requests) {
+      // tsToIndex / modelName: 只追加不修改，增量扫描
       const startIdx = (requests.length >= cache.processedCount) ? cache.processedCount : 0;
       if (startIdx === 0) {
         cache.tsToIndex = {};
         cache.modelName = null;
-        cache.subAgentEntries = [];
       }
       for (let i = startIdx; i < requests.length; i++) {
         const req = requests[i];
@@ -747,6 +750,13 @@ class ChatView extends React.Component {
         if (ma && req.body?.model) {
           cache.modelName = req.body.model;
         }
+      }
+      cache.processedCount = requests.length;
+
+      // subAgentEntries: response 可能被原地更新，从 subAgentProcessedCount 开始扫描
+      const subStart = cache.subAgentProcessedCount || 0;
+      for (let i = subStart; i < requests.length; i++) {
+        const req = requests[i];
         if (!req.timestamp) continue;
         const cls = classifyRequest(req, requests[i + 1]);
         if (cls.type === 'SubAgent' || cls.type === 'Teammate') {
@@ -767,7 +777,7 @@ class ChatView extends React.Component {
           }
         }
       }
-      cache.processedCount = requests.length;
+      cache.subAgentProcessedCount = requests.length;
     }
     const tsToIndex = cache.tsToIndex;
     const modelInfo = getModelInfo(cache.modelName);

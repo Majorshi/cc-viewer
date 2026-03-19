@@ -105,7 +105,11 @@ function isPreflightRequest(req, nextReq) {
 export function classifyRequest(req, nextReq) {
   // Teammate 子进程的请求优先识别（收敛于 contentFilter.isTeammate）
   if (isTeammate(req)) {
-    return { type: 'Teammate', subType: req.teammate || extractTeammateName(req.body) || null };
+    if (req.teammate) return { type: 'Teammate', subType: req.teammate };
+    if (req._cachedTeammateName === undefined) {
+      req._cachedTeammateName = extractTeammateName(req.body) || null;
+    }
+    return { type: 'Teammate', subType: req._cachedTeammateName };
   }
 
   if (isMainAgent(req)) {

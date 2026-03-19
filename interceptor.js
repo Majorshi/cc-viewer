@@ -85,12 +85,12 @@ function resolveResumeChoice(choice) {
   return result;
 }
 
-// Teammate 子进程检测：teammate 通过 --parent-session-id 启动（提前到日志路径初始化之前）
-const _isTeammate = process.argv.includes('--parent-session-id');
+// Teammate 子进程检测：--parent-session-id（旧模式）或 --agent-name（原生 team 模式）
+const _isTeammate = process.argv.includes('--parent-session-id') || process.argv.includes('--agent-name');
 // 提取 teammate 元数据（--agent-name worker-1 --team-name fix-ts-errors）
 let _teammateName = null;
 let _teamName = null;
-if (_isTeammate) {
+{
   const args = process.argv;
   const nameIdx = args.indexOf('--agent-name');
   if (nameIdx !== -1 && nameIdx + 1 < args.length) _teammateName = args[nameIdx + 1];
@@ -187,6 +187,8 @@ export function resetWorkspace() {
 const MAX_LOG_SIZE = 150 * 1024 * 1024; // 150MB
 
 function checkAndRotateLogFile() {
+  // Teammate 不做日志轮转，由 leader 负责
+  if (_isTeammate) return;
   try {
     if (!existsSync(LOG_FILE)) return;
     const size = statSync(LOG_FILE).size;
