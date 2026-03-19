@@ -1487,8 +1487,7 @@ class AppHeader extends React.Component {
           {this.state.pluginsList.length === 0 ? (
             <div className={styles.pluginEmpty}>
               <div style={{ fontSize: 14, marginBottom: 4 }}>{t('ui.plugins.empty')}</div>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>{t('ui.plugins.emptyHint')}</div>
-              <Button icon={<PlusOutlined />} onClick={this.handleAddPlugin}>{t('ui.plugins.add')}</Button>
+              <div style={{ fontSize: 12, color: '#666' }}>{t('ui.plugins.emptyHint')}</div>
             </div>
           ) : (
             <div className={styles.pluginList}>
@@ -1539,8 +1538,8 @@ class AppHeader extends React.Component {
           onCancel={this.handleCdnCancel}
           onOk={this.handleCdnInstall}
           confirmLoading={this.state.cdnLoading}
-          okText={t('ui.plugins.cdnInstall')}
-          cancelText="Cancel"
+          okText={t('ui.plugins.cdnInstallBtn')}
+          cancelText={t('ui.cancel')}
           width={480}
         >
           <div>

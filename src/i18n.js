@@ -523,6 +523,26 @@ const i18nData = {
     "tr": "Lütfen geçerli bir URL girin",
     "uk": "Будь ласка, введіть дійсну URL-адресу"
   },
+  "ui.plugins.cdnInstallBtn": {
+    "zh": "安装",
+    "en": "Install",
+    "zh-TW": "安裝",
+    "ko": "설치",
+    "ja": "インストール",
+    "de": "Installieren",
+    "es": "Instalar",
+    "fr": "Installer",
+    "it": "Installa",
+    "da": "Installer",
+    "pl": "Zainstaluj",
+    "ru": "Установить",
+    "ar": "تثبيت",
+    "no": "Installer",
+    "pt-BR": "Instalar",
+    "th": "ติดตั้ง",
+    "tr": "Yükle",
+    "uk": "Встановити"
+  },
   "ui.plugins.cdnInstallSuccess": {
     "zh": "插件安装成功",
     "en": "Plugin installed successfully",
