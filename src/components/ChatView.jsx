@@ -374,11 +374,26 @@ class ChatView extends React.Component {
       nextProps.cliMode !== this.props.cliMode ||
       nextProps.terminalVisible !== this.props.terminalVisible ||
       nextProps.userProfile !== this.props.userProfile ||
+      nextProps.pendingUploadPaths !== this.props.pendingUploadPaths ||
       nextState !== this.state
     );
   }
 
   componentDidUpdate(prevProps) {
+    // Handle files dropped onto the app
+    if (this.props.pendingUploadPaths && this.props.pendingUploadPaths.length > 0
+      && this.props.pendingUploadPaths !== prevProps.pendingUploadPaths) {
+      const paths = this.props.pendingUploadPaths.join(' ');
+      const textarea = this._inputRef.current;
+      if (textarea) {
+        textarea.value = (textarea.value ? textarea.value + ' ' : '') + paths;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        this.setState({ inputEmpty: false });
+      } else if (this._inputWs && this._inputWs.readyState === WebSocket.OPEN) {
+        this._inputWs.send(JSON.stringify({ type: 'input', data: paths }));
+      }
+      if (this.props.onUploadPathsConsumed) this.props.onUploadPathsConsumed();
+    }
     if (prevProps.mainAgentSessions !== this.props.mainAgentSessions) {
       // full_reload / sessions 引用变化 → 重置增量状态
       if (this.props.mainAgentSessions !== this._prevSessions) {

@@ -2,6 +2,7 @@ import React from 'react';
 import { ConfigProvider, Layout, theme, Modal, Table, Tag, Spin, Button, Checkbox, Badge, Switch, Popover, message } from 'antd';
 import { UploadOutlined, MessageOutlined, BranchesOutlined, DownloadOutlined, DeleteOutlined, RollbackOutlined, ReloadOutlined } from '@ant-design/icons';
 import { isMobile, isIOS } from './env';
+import { uploadFileAndGetPath } from './components/TerminalPanel';
 
 const MAX_SESSIONS = isMobile ? 30 : 100;
 import AppHeader from './components/AppHeader';
@@ -56,6 +57,7 @@ class App extends React.Component {
       expandDiff: false,
       fileLoading: false,
       fileLoadingCount: 0,
+      isDragging: false,
       selectedLogs: new Set(),   // Set<file>
       githubStars: null,
       cliMode: false,
@@ -1272,14 +1274,53 @@ class App extends React.Component {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.jsonl';
+    input.multiple = true;
     input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 500 * 1024 * 1024) {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+      const totalSize = files.reduce((s, f) => s + f.size, 0);
+      if (totalSize > 500 * 1024 * 1024) {
         message.error(t('ui.fileTooLarge'));
         return;
       }
       this.setState({ fileLoading: true, fileLoadingCount: 0 });
+      let readCount = 0;
+      const allEntries = [];
+      const fileNames = [];
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const content = ev.target.result;
+            const entries = content.split('\n---\n').filter(line => line.trim()).map(entry => {
+              try { return JSON.parse(entry); } catch { return null; }
+            }).filter(Boolean);
+            allEntries.push(...entries);
+            fileNames.push(file.name);
+          } catch {}
+          readCount++;
+          if (readCount === files.length) {
+            this._finishLocalLoad(allEntries, fileNames);
+          }
+        };
+        reader.readAsText(file);
+      });
+    };
+    input.click();
+  };
+
+  _processJsonlFiles = (files) => {
+    if (!files || files.length === 0) return;
+    const totalSize = files.reduce((s, f) => s + f.size, 0);
+    if (totalSize > 500 * 1024 * 1024) {
+      message.error(t('ui.fileTooLarge'));
+      return;
+    }
+    this.setState({ fileLoading: true, fileLoadingCount: 0 });
+    let readCount = 0;
+    const allEntries = [];
+    const fileNames = [];
+    files.forEach(file => {
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
@@ -1287,40 +1328,83 @@ class App extends React.Component {
           const entries = content.split('\n---\n').filter(line => line.trim()).map(entry => {
             try { return JSON.parse(entry); } catch { return null; }
           }).filter(Boolean);
-          if (entries.length === 0) {
-            message.error(t('ui.noLogs'));
-            this.setState({ fileLoading: false, fileLoadingCount: 0 });
-            return;
-          }
-          this.animateLoadingCount(entries.length, () => {
-            let mainAgentSessions = [];
-            for (const entry of entries) {
-              if (isMainAgent(entry) && entry.body && Array.isArray(entry.body.messages)) {
-                mainAgentSessions = this.mergeMainAgentSessions(mainAgentSessions, entry);
-              }
-            }
-            const filtered = filterRelevantRequests(entries);
-            this._isLocalLog = true;
-            this._localLogFile = file.name;
-            if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
-            this._rebuildRequestIndex(entries);
-            this.setState({
-              requests: entries,
-              selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
-              mainAgentSessions,
-              importModalVisible: false,
-              fileLoading: false,
-              fileLoadingCount: 0,
-            });
-          });
-        } catch (err) {
-          message.error(t('ui.noLogs'));
-          this.setState({ fileLoading: false, fileLoadingCount: 0 });
+          allEntries.push(...entries);
+          fileNames.push(file.name);
+        } catch {}
+        readCount++;
+        if (readCount === files.length) {
+          this._finishLocalLoad(allEntries, fileNames);
         }
       };
       reader.readAsText(file);
-    };
-    input.click();
+    });
+  };
+
+  _onDragOver = (e) => {
+    e.preventDefault();
+    if (!this.state.isDragging) this.setState({ isDragging: true });
+  };
+
+  _onDragLeave = (e) => {
+    // Only set false when truly leaving the container
+    const layout = this._layoutRef.current;
+    if (layout && !layout.contains(e.relatedTarget)) {
+      this.setState({ isDragging: false });
+    }
+  };
+
+  _onDrop = (e) => {
+    e.preventDefault();
+    this.setState({ isDragging: false });
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    // Upload files to server, collect paths, pass to ChatView
+    Promise.all(
+      files.map(file =>
+        uploadFileAndGetPath(file).then(path => ({ name: file.name, path }))
+          .catch(err => { message.error(`${file.name}: ${err.message}`); return null; })
+      )
+    ).then(results => {
+      const paths = results.filter(Boolean).map(r => `"${r.path}"`);
+      if (paths.length > 0) {
+        this.setState(prev => ({
+          pendingUploadPaths: [...(prev.pendingUploadPaths || []), ...paths],
+        }));
+      }
+    });
+  };
+
+  handleUploadPathsConsumed = () => {
+    this.setState({ pendingUploadPaths: [] });
+  };
+
+  _finishLocalLoad = (entries, fileNames) => {
+    if (entries.length === 0) {
+      message.error(t('ui.noLogs'));
+      this.setState({ fileLoading: false, fileLoadingCount: 0 });
+      return;
+    }
+    this.animateLoadingCount(entries.length, () => {
+      let mainAgentSessions = [];
+      for (const entry of entries) {
+        if (isMainAgent(entry) && entry.body && Array.isArray(entry.body.messages)) {
+          mainAgentSessions = this.mergeMainAgentSessions(mainAgentSessions, entry);
+        }
+      }
+      const filtered = filterRelevantRequests(entries);
+      this._isLocalLog = true;
+      this._localLogFile = fileNames.length === 1 ? fileNames[0] : `${fileNames.length} files`;
+      if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+      this._rebuildRequestIndex(entries);
+      this.setState({
+        requests: entries,
+        selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
+        mainAgentSessions,
+        importModalVisible: false,
+        fileLoading: false,
+        fileLoadingCount: 0,
+      });
+    });
   };
 
   formatTimestamp(ts, mobile) {
@@ -1546,7 +1630,7 @@ class App extends React.Component {
             </div>
             <div className={`${styles.mobileLogMgmtOverlay} ${this.state.mobileLogMgmtVisible ? styles.mobileLogMgmtOverlayVisible : ''}`}>
               <div className={styles.mobileLogMgmtHeader}>
-                <span className={styles.mobileLogMgmtTitle}>{t('ui.importLocalLogs')}</span>
+                <span className={styles.mobileLogMgmtTitle}><svg onClick={() => fetch('/api/open-log-dir', { method: 'POST' })} title={t('ui.openLogDir')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ cursor: 'pointer', opacity: 0.7, marginRight: 6, verticalAlign: 'middle' }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>{t('ui.importLocalLogs')}</span>
                 <button className={styles.mobileLogMgmtClose} onClick={() => this.setState({ mobileLogMgmtVisible: false, selectedLogs: new Set() })}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -1705,7 +1789,15 @@ class App extends React.Component {
             <div className={styles.loadingText}>Loading...({fileLoadingCount})</div>
           </div>
         )}
-        <Layout className={styles.layout} ref={this._layoutRef}>
+        {this.state.isDragging && (
+          <div className={styles.dragOverlay}>
+            <div className={styles.dragOverlayContent}>
+              <UploadOutlined style={{ fontSize: 48 }} />
+              <p>{t('ui.dragDropHint')}</p>
+            </div>
+          </div>
+        )}
+        <Layout className={styles.layout} ref={this._layoutRef} onDragOver={this._onDragOver} onDragLeave={this._onDragLeave} onDrop={this._onDrop}>
           <Layout.Header className={styles.header}>
             <AppHeader
               requestCount={filteredRequests.length}
@@ -1812,7 +1904,7 @@ class App extends React.Component {
               )
             )}
             <div style={{ display: viewMode === 'chat' ? 'flex' : 'none', height: '100%', flexDirection: 'column' }}>
-              <ChatView requests={filteredRequests} mainAgentSessions={mainAgentSessions} userProfile={this.state.userProfile} collapseToolResults={this.state.collapseToolResults} expandThinking={this.state.expandThinking} onViewRequest={this.handleViewRequest} scrollToTimestamp={this.state.chatScrollToTs} onScrollTsDone={this.handleScrollTsDone} cliMode={this._isLocalLog ? false : this.state.cliMode} terminalVisible={this._isLocalLog ? false : this.state.terminalVisible} />
+              <ChatView requests={filteredRequests} mainAgentSessions={mainAgentSessions} userProfile={this.state.userProfile} collapseToolResults={this.state.collapseToolResults} expandThinking={this.state.expandThinking} onViewRequest={this.handleViewRequest} scrollToTimestamp={this.state.chatScrollToTs} onScrollTsDone={this.handleScrollTsDone} cliMode={this._isLocalLog ? false : this.state.cliMode} terminalVisible={this._isLocalLog ? false : this.state.terminalVisible} pendingUploadPaths={this.state.pendingUploadPaths} onUploadPathsConsumed={this.handleUploadPathsConsumed} />
             </div>
           </Layout.Content>
           <div className={styles.footer}>
@@ -1847,7 +1939,7 @@ class App extends React.Component {
         </Modal>
 
         <Modal
-          title={t('ui.importLocalLogs')}
+          title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><svg onClick={() => fetch('/api/open-log-dir', { method: 'POST' })} title={t('ui.openLogDir')} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ cursor: 'pointer', opacity: 0.7, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>{t('ui.importLocalLogs')}</span>}
           open={this.state.importModalVisible}
           onCancel={this.handleCloseImportModal}
           footer={null}

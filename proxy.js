@@ -99,14 +99,18 @@ export function startProxy() {
         if (!response.ok) {
           try {
             const errorText = await response.text();
-            console.error(`[CC-Viewer Proxy] ${extractApiErrorMessage(response.status, errorText)}`);
+            if (process.env.CCV_DEBUG) {
+              console.error(`[CC-Viewer Proxy] ${extractApiErrorMessage(response.status, errorText)}`);
+            }
 
             res.writeHead(response.status, responseHeaders);
             res.end(errorText);
             return;
           } catch (err) {
             // 读取 body 失败，回退到流式处理
-            console.error('[CC-Viewer Proxy] Failed to read error body:', err);
+            if (process.env.CCV_DEBUG) {
+              console.error('[CC-Viewer Proxy] Failed to read error body:', err);
+            }
           }
         }
 
@@ -128,11 +132,9 @@ export function startProxy() {
           res.end();
         }
       } catch (err) {
-        // Log concise error unless debugging
+        // Log proxy errors only when debugging
         if (process.env.CCV_DEBUG) {
           console.error('[CC-Viewer Proxy] Error:', err);
-        } else {
-          console.error(formatProxyRequestError(err));
         }
 
         res.statusCode = 502;

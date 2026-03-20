@@ -199,6 +199,26 @@ const i18nData = {
     "tr": "Log yönetimi",
     "uk": "Керування логами"
   },
+  "ui.openLogDir": {
+    "zh": "打开日志文件夹",
+    "en": "Open log folder",
+    "zh-TW": "開啟日誌資料夾",
+    "ko": "로그 폴더 열기",
+    "ja": "ログフォルダを開く",
+    "de": "Log-Ordner öffnen",
+    "es": "Abrir carpeta de logs",
+    "fr": "Ouvrir le dossier de logs",
+    "it": "Apri cartella log",
+    "da": "Åbn logmappe",
+    "pl": "Otwórz folder logów",
+    "ru": "Открыть папку логов",
+    "ar": "فتح مجلد السجلات",
+    "no": "Åpne loggmappe",
+    "pt-BR": "Abrir pasta de logs",
+    "th": "เปิดโฟลเดอร์บันทึก",
+    "tr": "Log klasörünü aç",
+    "uk": "Відкрити теку логів"
+  },
   "ui.loadLocalJsonl": {
     "zh": "上传日志并解析",
     "en": "Upload and parse log",
@@ -238,6 +258,26 @@ const i18nData = {
     "th": "ขนาดไฟล์ต้องไม่เกิน 500MB",
     "tr": "Dosya boyutu 500MB'ı aşamaz",
     "uk": "Розмір файлу не може перевищувати 500МБ"
+  },
+  "ui.dragDropHint": {
+    "zh": "拖放文件到此处上传",
+    "en": "Drop files here to upload",
+    "zh-TW": "拖放檔案到此處上傳",
+    "ko": "파일을 여기에 놓아 업로드",
+    "ja": "ファイルをここにドロップしてアップロード",
+    "de": "Dateien hierher ziehen zum Hochladen",
+    "es": "Suelta archivos aquí para subir",
+    "fr": "Déposez les fichiers ici pour télécharger",
+    "it": "Trascina i file qui per caricare",
+    "da": "Slip filer her for at uploade",
+    "pl": "Upuść pliki tutaj, aby przesłać",
+    "ru": "Перетащите файлы сюда для загрузки",
+    "ar": "أسقط الملفات هنا للتحميل",
+    "no": "Slipp filer her for å laste opp",
+    "pt-BR": "Solte arquivos aqui para enviar",
+    "th": "วางไฟล์ที่นี่เพื่ออัปโหลด",
+    "tr": "Dosyaları yüklemek için buraya bırakın",
+    "uk": "Перетягніть файли сюди для завантаження"
   },
   "ui.exportPrompts": {
     "zh": "查看用户 Prompt",

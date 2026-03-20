@@ -911,6 +911,15 @@ async function handleRequest(req, res) {
 
   // === Editor session API (for $EDITOR intercept) ===
 
+  if (url === '/api/open-log-dir' && method === 'POST') {
+    const dir = LOG_FILE ? dirname(LOG_FILE) : LOG_DIR;
+    const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+    exec(`${cmd} ${JSON.stringify(dir)}`, () => {});
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, dir }));
+    return;
+  }
+
   if (url === '/api/editor-open' && method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; if (body.length > MAX_POST_BODY) req.destroy(); });
