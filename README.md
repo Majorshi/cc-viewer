@@ -160,6 +160,7 @@ Click the "Conversation Mode" button in the top-right corner to parse the Main A
 - Bidirectional mode sync: switching to conversation mode auto-scrolls to the conversation corresponding to the selected request; switching back to raw mode auto-scrolls to the selected request
 - Settings panel: toggle default collapse state for tool results and thinking blocks
 - Mobile conversation browsing: in mobile CLI mode, tap the "Conversation Browse" button in the top bar to slide out a read-only conversation view for browsing the complete conversation history on mobile
+- Network location indicator: header displays a country flag emoji based on the browser's outbound IP (via ipinfo.io); hover to see city, region, ISP, and IP address
 
 ### Statistics Tool
 

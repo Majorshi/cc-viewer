@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.12 (2026-03-21)
+
+- Feature: header displays country flag emoji based on network IP geolocation (via ipinfo.io); hover to see city, region, org, and IP; fallback to 🇨🇳 on request failure
+- Feature: drag-and-drop file upload support
+- Fix: full-chain real-time conversation refresh for main agent and teammates
+
 ## 1.6.11 (2026-03-20)
 
 - Fix: full-chain real-time conversation refresh — teammate detection expanded to `--agent-name` (native team mode), metadata extraction no longer gated by `_isTeammate`

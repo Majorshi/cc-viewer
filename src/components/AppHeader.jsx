@@ -32,10 +32,16 @@ const LANG_OPTIONS = [
 ];
 
 
+const countryToFlag = (code) => {
+  const toFlag = (c2) => c2.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+  if (!code || code.length !== 2) return toFlag('CN');
+  return toFlag(code);
+};
+
 class AppHeader extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { countdownText: '', promptModalVisible: false, promptData: [], promptViewMode: 'original', settingsDrawerVisible: false, globalSettingsVisible: false, projectStatsVisible: false, projectStats: null, projectStatsLoading: false, localUrl: '', pluginModalVisible: false, pluginsList: [], pluginsDir: '', deleteConfirmVisible: false, deleteTarget: null, processModalVisible: false, processList: [], processLoading: false, logoDropdownOpen: false, cacheHighlightIdx: null, cacheHighlightFading: false, cdnModalVisible: false, cdnUrl: '', cdnLoading: false };
+    this.state = { countdownText: '', countryFlag: null, countryInfo: null, promptModalVisible: false, promptData: [], promptViewMode: 'original', settingsDrawerVisible: false, globalSettingsVisible: false, projectStatsVisible: false, projectStats: null, projectStatsLoading: false, localUrl: '', pluginModalVisible: false, pluginsList: [], pluginsDir: '', deleteConfirmVisible: false, deleteTarget: null, processModalVisible: false, processList: [], processLoading: false, logoDropdownOpen: false, cacheHighlightIdx: null, cacheHighlightFading: false, cdnModalVisible: false, cdnUrl: '', cdnLoading: false };
     this._rafId = null;
     this._expiredTimer = null;
     this.updateCountdown = this.updateCountdown.bind(this);
@@ -46,6 +52,9 @@ class AppHeader extends React.Component {
     fetch(apiUrl('/api/local-url')).then(r => r.json()).then(data => {
       if (data.url) this.setState({ localUrl: data.url });
     }).catch(() => {});
+    fetch('https://ipinfo.io/json').then(r => r.json()).then(data => {
+      if (data.country) this.setState({ countryFlag: countryToFlag(data.country), countryInfo: data });
+    }).catch(() => { this.setState({ countryFlag: countryToFlag('CN') }); });
   }
 
   componentDidUpdate(prevProps) {
@@ -1292,7 +1301,26 @@ class AppHeader extends React.Component {
             </Tag>
           )}
           {viewMode === 'chat' && cliMode && !isLocalLog && this.state.localUrl && (
-            <Popover
+            <>
+              {this.state.countryFlag && (
+                <Popover
+                  content={this.state.countryInfo ? (
+                    <div style={{ color: '#ccc', fontSize: 13, lineHeight: '22px' }}>
+                      <div>{this.state.countryFlag} {this.state.countryInfo.country}</div>
+                      {this.state.countryInfo.region && <div>{this.state.countryInfo.region}</div>}
+                      {this.state.countryInfo.city && <div>{this.state.countryInfo.city}</div>}
+                      {this.state.countryInfo.org && <div style={{ color: '#888', fontSize: 12 }}>{this.state.countryInfo.org}</div>}
+                      {this.state.countryInfo.ip && <div style={{ color: '#888', fontSize: 12 }}>{this.state.countryInfo.ip}</div>}
+                    </div>
+                  ) : null}
+                  trigger="hover"
+                  placement="bottomRight"
+                  overlayInnerStyle={{ background: '#1e1e1e', border: '1px solid #3a3a3a', borderRadius: 8, padding: '8px 12px' }}
+                >
+                  <Button className={styles.compactBtnNoBorder} icon={<span style={{ verticalAlign: '-3px', fontSize: 16 }}>{this.state.countryFlag}</span>} />
+                </Popover>
+              )}
+              <Popover
               content={
                 <div className={styles.qrcodePopover}>
                   <div className={styles.qrcodeTitle}>{t('ui.scanToCoding')}</div>
@@ -1328,6 +1356,7 @@ class AppHeader extends React.Component {
                 }
               />
             </Popover>
+            </>
           )}
           {cliMode && viewMode === 'chat' && !isLocalLog && (
             <Button
