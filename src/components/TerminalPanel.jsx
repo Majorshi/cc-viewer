@@ -1,5 +1,5 @@
 import React from 'react';
-import { message } from 'antd';
+import { message, Tooltip } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -45,6 +45,17 @@ function UploadIcon() {
   );
 }
 
+function AgentTeamIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
 export async function uploadFileAndGetPath(file) {
   const MAX_SIZE = 50 * 1024 * 1024; // 50MB
   if (file.size > MAX_SIZE) throw new Error('File too large (max 50MB)');
@@ -65,12 +76,18 @@ class TerminalPanel extends React.Component {
     this.fitAddon = null;
     this.ws = null;
     this.resizeObserver = null;
+    this.state = { agentTeamEnabled: false };
   }
 
   componentDidMount() {
     this.initTerminal();
     this.connectWebSocket();
     this.setupResizeObserver();
+    // 读取 claude settings 判断 Agent Team 是否可用
+    fetch(apiUrl('/api/claude-settings')).then(r => r.json()).then(data => {
+      const enabled = data?.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === '1';
+      this.setState({ agentTeamEnabled: enabled });
+    }).catch(() => {});
   }
 
   componentWillUnmount() {
@@ -621,6 +638,11 @@ class TerminalPanel extends React.Component {
     e.target.value = '';
   };
 
+  // TODO: 后面会修改为实际的 Agent Team 功能
+  handleAgentTeam = () => {
+    message.info('功能正在开发中...马上就有！');
+  };
+
   handleUltrathink = () => {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'input', data: 'ultrathink ' }));
@@ -643,6 +665,17 @@ class TerminalPanel extends React.Component {
               <UltrathinkIcon />
               <span>{t('ui.terminal.ultrathink')}</span>
             </button>
+            <Tooltip title={this.state.agentTeamEnabled ? '' : t('ui.terminal.agentTeamDisabledTip')} placement="top">
+              <button
+                className={`${styles.toolbarBtn} ${!this.state.agentTeamEnabled ? styles.toolbarBtnDisabled : ''}`}
+                disabled={!this.state.agentTeamEnabled}
+                onClick={this.handleAgentTeam}
+                title={t('ui.terminal.agentTeam')}
+              >
+                <AgentTeamIcon />
+                <span>{t('ui.terminal.agentTeam')}</span>
+              </button>
+            </Tooltip>
           </div>
         )}
         {isMobile && (

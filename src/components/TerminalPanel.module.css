@@ -49,6 +49,16 @@
   border-color: #555;
 }
 
+.toolbarBtnDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.toolbarBtnDisabled:hover {
+  background: #1a1a1a;
+  color: #aaa;
+  border-color: #333;
+}
+
 .toolbarBtn svg {
   width: 14px;
   height: 14px;

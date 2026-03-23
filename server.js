@@ -49,6 +49,15 @@ import { listLocalLogs, readLocalLog, deleteLogFiles, mergeLogFiles } from './li
 import { detectTargetLang, translate } from './lib/translator.js';
 
 const PREFS_FILE = join(LOG_DIR, 'preferences.json');
+
+// 启动时一次性读取 ~/.claude/settings.json（不 watch）
+let claudeSettings = {};
+try {
+  const settingsPath = join(homedir(), '.claude', 'settings.json');
+  if (existsSync(settingsPath)) {
+    claudeSettings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+  }
+} catch { }
 const isCliMode = process.env.CCV_CLI_MODE === '1';
 const isWorkspaceMode = process.env.CCV_WORKSPACE_MODE === '1';
 
@@ -821,6 +830,13 @@ async function handleRequest(req, res) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
+    return;
+  }
+
+  // Claude settings.json（启动时读取，不 watch）
+  if (url === '/api/claude-settings' && method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ env: claudeSettings.env || {}, model: claudeSettings.model || null }));
     return;
   }
 

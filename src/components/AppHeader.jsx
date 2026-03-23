@@ -54,6 +54,9 @@ class AppHeader extends React.Component {
     fetch(apiUrl('/api/local-url')).then(r => r.json()).then(data => {
       if (data.url) this.setState({ localUrl: data.url });
     }).catch(() => {});
+    fetch(apiUrl('/api/claude-settings')).then(r => r.json()).then(data => {
+      if (data.model) this.setState({ settingsModel: data.model });
+    }).catch(() => {});
     fetch('https://ipinfo.io/json').then(r => r.json()).then(data => {
       if (data.country) this.setState({ countryFlag: countryToFlag(data.country), countryInfo: data });
     }).catch(() => { this.setState({ countryFlag: countryToFlag('CN') }); });
@@ -1299,7 +1302,7 @@ class AppHeader extends React.Component {
                 for (let i = requests.length - 1; i >= 0; i--) {
                   if (isMainAgent(requests[i]) && requests[i].response?.body?.usage) {
                     const total = getTotal(requests[i]);
-                    const maxTokens = calibrationTokens || contextWindow?.context_window_size || getModelMaxTokens(requests[i].body?.model);
+                    const maxTokens = calibrationTokens || contextWindow?.context_window_size || getModelMaxTokens(requests[i].body?.model || this.state.settingsModel);
                     const usable = maxTokens * 0.835;
                     if (usable > 0 && total > 0) {
                       contextPercent = Math.min(100, Math.max(0, Math.round(total / usable * 100)));

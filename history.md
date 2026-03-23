@@ -1,10 +1,15 @@
 # Changelog
 
-## 1.6.23 (2026-03-23)
+## 1.6.24 (2026-03-23)
 
 - Feature: clipboard image paste in terminal — paste images directly from clipboard when terminal is focused, auto-uploads and inserts file path
 - Feature: Retina image downscale — clipboard images on HiDPI displays (devicePixelRatio > 1) are downscaled to 1x before upload to reduce file size
 - Feature: upload failure toast — shows antd message.error with localized text when clipboard image upload fails
+- Feature: model calibration selector — manual model selection in KV-Cache popover to calibrate context usage blood bar, with localStorage persistence
+- Feature: Agent Team button — toolbar button for native Agent Team, enabled when CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 in claude settings
+- Fix: file explorer scroll — clicking file path in git diff view now expands ancestor directories so file is visible and scrolled to
+- Fix: global text selection color — unified to #264f78 (VS Code blue) across all views
+- Security: /api/claude-settings endpoint now only exposes env field instead of full settings.json
 
 ## 1.6.22 (2026-03-23)
 

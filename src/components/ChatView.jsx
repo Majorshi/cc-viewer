@@ -1844,12 +1844,26 @@ class ChatView extends React.Component {
                 <GitDiffView
                   filePath={this.state.currentGitDiff}
                   onClose={() => this.setState({ currentGitDiff: null })}
-                  onOpenFile={(path, line) => { this._setFileExplorerOpen(true); this.setState({
-                    currentGitDiff: null,
-                    currentFile: path,
-                    scrollToLine: line || 1,
-                    gitChangesOpen: false,
-                  }); }}
+                  onOpenFile={(path, line) => {
+                    // 计算祖先目录路径并展开，确保文件在文件浏览器中可见并滚动定位
+                    const parts = path.split('/');
+                    const ancestors = [];
+                    for (let i = 1; i < parts.length; i++) {
+                      ancestors.push(parts.slice(0, i).join('/'));
+                    }
+                    this._setFileExplorerOpen(true);
+                    this.setState(prev => {
+                      const newSet = new Set(prev.fileExplorerExpandedPaths);
+                      ancestors.forEach(p => newSet.add(p));
+                      return {
+                        currentGitDiff: null,
+                        currentFile: path,
+                        scrollToLine: line || 1,
+                        gitChangesOpen: false,
+                        fileExplorerExpandedPaths: newSet,
+                      };
+                    });
+                  }}
                 />
               </div>
             )}
