@@ -294,9 +294,14 @@ class App extends React.Component {
         try {
           const data = JSON.parse(event.data);
           // 等待偏好加载完成再判断是否跳过弹窗（避免竞态）
-          (this._prefsReady || Promise.resolve({})).then(() => {
-            if (this.state.resumeAutoChoice) {
-              this.handleResumeChoice(this.state.resumeAutoChoice);
+          (this._prefsReady || Promise.resolve({})).then((prefs) => {
+            if (prefs?.resumeAutoChoice) {
+              // 自动跳过：直接发送选择到服务端，不触碰偏好设置（避免 setState 竞态清除偏好）
+              fetch(apiUrl('/api/resume-choice'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ choice: prefs.resumeAutoChoice }),
+              }).catch(err => console.error('resume-choice failed:', err));
             } else {
               this.setState({ resumeModalVisible: true, resumeFileName: data.recentFileName || '' });
             }

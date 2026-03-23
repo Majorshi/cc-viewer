@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.25 (2026-03-23)
+
+- Fix: resume popup repeatedly showing — auto-skip path now directly POSTs to server, avoiding setState race that cleared saved preferences
+- Fix: blood bar context size — precise mode now uses settings.json model as fallback when statusLine detected size differs from configured model
+
 ## 1.6.24 (2026-03-23)
 
 - Feature: clipboard image paste in terminal — paste images directly from clipboard when terminal is focused, auto-uploads and inserts file path

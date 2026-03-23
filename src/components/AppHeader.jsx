@@ -1292,7 +1292,14 @@ class AppHeader extends React.Component {
                 }
               } else if (contextWindow?.used_percentage != null) {
                 // 精确模式：statusLine 推送的 used_percentage
-                contextPercent = Math.min(100, Math.max(0, Math.round(contextWindow.used_percentage / 83.5 * 100)));
+                // 如果 settings.json 指定了模型且上下文大小与 statusLine 检测的不同，按比例修正
+                const settingsTokens = this.state.settingsModel ? getModelMaxTokens(this.state.settingsModel) : 0;
+                const detectedMax = contextWindow.context_window_size || 200000;
+                if (settingsTokens && settingsTokens !== detectedMax) {
+                  contextPercent = Math.min(100, Math.max(0, Math.round(contextWindow.used_percentage * detectedMax / settingsTokens / 83.5 * 100)));
+                } else {
+                  contextPercent = Math.min(100, Math.max(0, Math.round(contextWindow.used_percentage / 83.5 * 100)));
+                }
               } else if (requests.length > 0) {
                 // fallback：用最后一个 MainAgent 的 total input 估算
                 const getTotal = (req) => {
