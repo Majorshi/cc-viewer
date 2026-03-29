@@ -1,22 +1,17 @@
 .chatInputBar {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 10px 16px;
-  background: #111;
-  border-top: 1px solid #2a2a2a;
+  padding: 8px 16px 12px;
+  background: rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
 }
 
 .chatInputWrapper {
-  flex: 1;
   display: flex;
   flex-direction: column;
   background: #1e1e1e;
   border: 1px solid #333;
-  border-radius: 12px;
+  border-radius: 16px;
   transition: border-color 0.2s;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .chatInputWrapper:focus-within {
@@ -32,7 +27,7 @@
   width: 100%;
   min-height: 22px;
   max-height: 120px;
-  padding: 10px 14px;
+  padding: 12px 14px 4px;
   background: transparent;
   color: #e0e0e0;
   border: none;
@@ -47,40 +42,111 @@
   color: #555;
 }
 
-.chatInputHint {
-  font-size: 11px;
-  color: #444;
-  padding: 0 14px 6px;
-  user-select: none;
+.chatInputBottom {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px 6px;
+  gap: 4px;
 }
 
-.chatSendBtn {
-  width: 36px;
-  height: 36px;
+.plusArea {
+  position: relative;
+}
+
+.plusBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.plusBtn:hover {
+  background: #2a2a2a;
+  color: #ccc;
+  border-color: #666;
+}
+
+.plusOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99;
+}
+
+.plusMenu {
+  position: absolute;
+  bottom: 36px;
+  left: 0;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
   border-radius: 10px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 100;
+}
+
+.plusMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
   border: none;
-  background: #4a9eff;
-  color: #fff;
+  background: transparent;
+  color: #ccc;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.plusMenuItem:hover {
+  background: #2a2a2a;
+}
+
+.chatInputHint {
+  flex: 1;
+  font-size: 11px;
+  color: #444;
+  user-select: none;
+  padding: 0 4px;
+}
+
+.sendBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: #000;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.15s, opacity 0.15s;
+  transition: opacity 0.15s;
 }
 
-.chatSendBtn:hover {
-  background: #3a8eef;
-}
-
-.chatSendBtn:disabled {
-  opacity: 0.35;
+.sendBtnDisabled {
+  background: #444;
+  color: #888;
   cursor: default;
 }
 
-.chatSendBtn svg {
-  width: 18px;
-  height: 18px;
+.sendBtn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .ghostText {
@@ -88,7 +154,7 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: 10px 14px;
+  padding: 12px 14px 4px;
   color: #444;
   font-size: 14px;
   line-height: 1.5;
@@ -128,4 +194,52 @@
   color: #4a9eff;
   font-size: 14px;
   flex-shrink: 0;
+}
+
+/* ─── 移动端放大输入区域 ─── */
+@media (max-width: 768px) {
+  .chatTextarea {
+    min-height: 40px;
+    max-height: 160px;
+    padding: 14px 16px 6px;
+    font-size: 17px;
+  }
+
+  .ghostText {
+    padding: 14px 16px 6px;
+    font-size: 17px;
+  }
+
+  .chatInputBottom {
+    padding: 6px 8px 8px;
+    gap: 6px;
+  }
+
+  .plusBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .plusMenu {
+    bottom: 44px;
+  }
+
+  .plusMenuItem {
+    padding: 10px 14px;
+    font-size: 15px;
+  }
+
+  .chatInputHint {
+    font-size: 13px;
+  }
+
+  .sendBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .sendBtn svg {
+    width: 18px;
+    height: 18px;
+  }
 }

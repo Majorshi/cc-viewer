@@ -385,14 +385,16 @@ describe('streamRawEntriesAsync', () => {
   it('空文件返回 0', async () => {
     writeFileSync(logFile, '');
     const raws = [];
-    const count = await streamRawEntriesAsync(logFile, (r) => raws.push(r));
-    assert.equal(count, 0);
+    const result = await streamRawEntriesAsync(logFile, (r) => raws.push(r));
+    assert.equal(result.sentCount, 0);
+    assert.equal(result.totalCount, 0);
     assert.equal(raws.length, 0);
   });
 
   it('不存在的文件返回 0', async () => {
-    const count = await streamRawEntriesAsync(join(tmpDir, 'nope.jsonl'), () => {});
-    assert.equal(count, 0);
+    const result = await streamRawEntriesAsync(join(tmpDir, 'nope.jsonl'), () => {});
+    assert.equal(result.sentCount, 0);
+    assert.equal(result.totalCount, 0);
   });
 
   it('发送原始 JSON 字符串（不是 parsed 对象）', async () => {
@@ -477,5 +479,237 @@ describe('streamRawEntriesAsync', () => {
     } finally {
       globalThis.setImmediate = origSetImmediate;
     }
+  });
+
+  it('返回 { sentCount, totalCount } 而非数字', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+      { newMessages: [msg('user', 'q2')] },
+    ]);
+    const result = await streamRawEntriesAsync(logFile, () => {});
+    assert.equal(typeof result, 'object');
+    assert.equal(typeof result.sentCount, 'number');
+    assert.equal(typeof result.totalCount, 'number');
+    assert.equal(result.sentCount, result.totalCount, 'Without since, sentCount === totalCount');
+    assert.ok(result.totalCount > 0);
+  });
+
+  it('since 过滤：只发送 timestamp >= since 的条目', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+      { newMessages: [msg('user', 'q2')] },
+      { newMessages: [msg('user', 'q3')] },
+      { newMessages: [msg('user', 'q4')] },
+      { newMessages: [msg('user', 'q5')] },
+    ]);
+
+    // 先获取所有条目
+    const allRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => allRaws.push(r));
+    const allParsed = allRaws.map(r => JSON.parse(r));
+    const timestamps = allParsed.map(e => e.timestamp).sort();
+
+    // 用中间时间戳作为 since
+    const since = timestamps[Math.floor(timestamps.length / 2)];
+    const filteredRaws = [];
+    const result = await streamRawEntriesAsync(logFile, (r) => filteredRaws.push(r), { since });
+
+    assert.ok(filteredRaws.length < allRaws.length, 'Filtered should have fewer entries');
+    assert.ok(filteredRaws.length > 0, 'Filtered should have some entries');
+    assert.equal(result.sentCount, filteredRaws.length, 'sentCount should match emitted count');
+    assert.equal(result.totalCount, allRaws.length, 'totalCount should match full deduped count');
+
+    // 所有 filtered 条目的时间戳应 >= since
+    for (const raw of filteredRaws) {
+      const parsed = JSON.parse(raw);
+      assert.ok(parsed.timestamp >= since,
+        `Entry timestamp ${parsed.timestamp} should be >= since ${since}`);
+    }
+  });
+
+  it('since 在所有条目之后：返回空 delta', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+    ]);
+    const raws = [];
+    const result = await streamRawEntriesAsync(logFile, (r) => raws.push(r), {
+      since: '2099-01-01T00:00:00Z',
+    });
+    assert.equal(raws.length, 0);
+    assert.equal(result.sentCount, 0);
+    assert.ok(result.totalCount > 0, 'totalCount should reflect all deduped entries');
+  });
+
+  it('onScan 对全量条目调用（不受 since 影响）', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+      { newMessages: [msg('user', 'q2')] },
+      { newMessages: [msg('user', 'q3')] },
+    ]);
+
+    // 先计算全量原始条目数
+    const rawCount = countLogEntries(logFile);
+
+    let scanCount = 0;
+    const filteredRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => filteredRaws.push(r), {
+      since: '2099-01-01T00:00:00Z', // 过滤掉所有条目
+      onScan: () => { scanCount++; },
+    });
+
+    assert.equal(filteredRaws.length, 0, 'since filter should exclude all entries');
+    assert.equal(scanCount, rawCount, 'onScan should be called for every raw entry (before dedup)');
+  });
+
+  it('onReady 在 onRawEntry 之前调用', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+    ]);
+
+    const callOrder = [];
+    await streamRawEntriesAsync(logFile,
+      () => { callOrder.push('rawEntry'); },
+      {
+        onReady: ({ totalCount }) => {
+          callOrder.push('ready');
+          assert.ok(totalCount > 0, 'totalCount should be available in onReady');
+        },
+      }
+    );
+
+    assert.equal(callOrder[0], 'ready', 'onReady should be called before any onRawEntry');
+    assert.ok(callOrder.includes('rawEntry'), 'onRawEntry should be called');
+  });
+
+  it('onReady 空文件也会调用', async () => {
+    writeFileSync(logFile, '');
+    let readyCalled = false;
+    await streamRawEntriesAsync(logFile, () => {}, {
+      onReady: () => { readyCalled = true; },
+    });
+    assert.ok(readyCalled, 'onReady should be called even for empty files');
+  });
+
+  it('向后兼容：无 opts 参数仍正常工作', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+    ]);
+    const raws = [];
+    // 只传两个参数，不传 opts
+    const result = await streamRawEntriesAsync(logFile, (r) => raws.push(r));
+    assert.ok(raws.length > 0);
+    assert.equal(result.sentCount, raws.length);
+  });
+
+  it('since + reconstruct 端到端：增量合并后与全量一致', async () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 10; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    // 模拟"缓存"：全量加载前 5 轮的数据
+    const allRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => allRaws.push(r));
+    const allParsed = allRaws.map(r => JSON.parse(r));
+    const cached = reconstructEntries([...allParsed]);
+
+    // 取缓存最后条目的时间戳作为 since
+    const lastTs = cached[cached.length - 1].timestamp;
+
+    // 模拟增量加载
+    const deltaRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => deltaRaws.push(r), { since: lastTs });
+    const delta = deltaRaws.map(r => JSON.parse(r));
+
+    // Map 去重合并（模拟客户端逻辑）
+    const map = new Map();
+    for (const e of cached) map.set(`${e.timestamp}|${e.url}`, e);
+    for (const e of delta) map.set(`${e.timestamp}|${e.url}`, e);
+    const merged = Array.from(map.values());
+
+    // 重建
+    const mergedResult = reconstructEntries(merged);
+
+    // 对比全量重建
+    const fullResult = reconstructEntries(allParsed.map(r => ({ ...r })));
+
+    // mainAgent 条目数应一致
+    const mergedMains = mergedResult.filter(e => e.mainAgent && !e.inProgress);
+    const fullMains = fullResult.filter(e => e.mainAgent && !e.inProgress);
+    assert.equal(mergedMains.length, fullMains.length, 'MainAgent count should match');
+
+    // 最终 messages 应一致
+    const mLast = mergedMains[mergedMains.length - 1];
+    const fLast = fullMains[fullMains.length - 1];
+    assert.equal(mLast.body.messages.length, fLast.body.messages.length, 'Final messages count should match');
+  });
+
+  it('since 边界：timestamp === since 的条目应被包含（>= 语义）', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+      { newMessages: [msg('user', 'q2')] },
+      { newMessages: [msg('user', 'q3')] },
+    ]);
+
+    const allRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => allRaws.push(r));
+    const allParsed = allRaws.map(r => JSON.parse(r));
+
+    // 选择某条的精确时间戳作为 since
+    const target = allParsed[Math.floor(allParsed.length / 2)];
+    const since = target.timestamp;
+
+    const filteredRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => filteredRaws.push(r), { since });
+
+    // 该条目应被包含（>= 而非 >）
+    const filteredParsed = filteredRaws.map(r => JSON.parse(r));
+    const found = filteredParsed.some(e => e.timestamp === since);
+    assert.ok(found, `Entry with timestamp === since (${since}) should be included`);
+  });
+
+  it('无 timestamp 的 __nokey_ 条目不受 since 过滤影响', async () => {
+    // 写入一条有 timestamp 的和一条无 timestamp 的
+    const normal = { timestamp: '2026-01-01T00:00:00.000Z', url: '/v1/messages', body: {} };
+    const noTs = { type: 'special', data: 'no-timestamp-entry' };
+    writeFileSync(logFile, [JSON.stringify(normal), JSON.stringify(noTs)].join('\n---\n') + '\n---\n');
+
+    const raws = [];
+    const result = await streamRawEntriesAsync(logFile, (r) => raws.push(r), {
+      since: '2099-01-01T00:00:00.000Z', // 排除所有有 timestamp 的条目
+    });
+
+    // 无 timestamp 条目应始终被包含
+    assert.equal(raws.length, 1, 'Entry without timestamp should always be included');
+    const parsed = JSON.parse(raws[0]);
+    assert.equal(parsed.type, 'special');
+    assert.equal(result.totalCount, 2, 'totalCount should include all deduped entries');
+  });
+
+  it('since 边界去重：inProgress 被 completed 替代', async () => {
+    // 模拟：缓存有 inProgress，delta 有同 timestamp 的 completed
+    const ts = '2026-06-15T12:00:00.000Z';
+    const ip = { timestamp: ts, url: '/v1/messages', inProgress: true, mainAgent: true, body: { messages: [msg('user', 'hello')] } };
+    const done = { timestamp: ts, url: '/v1/messages', mainAgent: true, body: { messages: [msg('user', 'hello')] }, response: { status: 200, body: { content: [{ type: 'text', text: 'hi' }] } } };
+    // 写入 inProgress 然后 completed（模拟正常日志流）
+    writeFileSync(logFile, [JSON.stringify(ip), JSON.stringify(done)].join('\n---\n') + '\n---\n');
+
+    // since = 该时间戳，应包含 completed 版本
+    const raws = [];
+    await streamRawEntriesAsync(logFile, (r) => raws.push(r), { since: ts });
+
+    assert.equal(raws.length, 1, 'Should emit exactly 1 entry (deduped)');
+    const parsed = JSON.parse(raws[0]);
+    assert.ok(!parsed.inProgress, 'Should be the completed version, not inProgress');
+    assert.ok(parsed.response, 'Completed entry should have response');
   });
 });

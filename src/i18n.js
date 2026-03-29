@@ -3537,6 +3537,26 @@ const i18nData = {
     "tr": "Claude'a mesaj yazın...",
     "uk": "Введіть повідомлення для Claude..."
   },
+  "ui.chatInput.more": {
+    "zh": "更多",
+    "en": "More",
+    "zh-TW": "更多",
+    "ko": "더보기",
+    "ja": "もっと見る",
+    "de": "Mehr",
+    "es": "Más",
+    "fr": "Plus",
+    "it": "Altro",
+    "da": "Mere",
+    "pl": "Więcej",
+    "ru": "Ещё",
+    "ar": "المزيد",
+    "no": "Mer",
+    "pt-BR": "Mais",
+    "th": "เพิ่มเติม",
+    "tr": "Daha fazla",
+    "uk": "Ще"
+  },
   "ui.chatInput.send": {
     "zh": "发送",
     "en": "Send",

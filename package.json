@@ -1,6 +1,6 @@
 {
   "name": "cc-viewer",
-  "version": "1.6.59",
+  "version": "1.6.60",
   "description": "Claude Code Logger visualization management tool",
   "license": "MIT",
   "main": "server.js",
@@ -80,12 +80,13 @@
     "antd": "^5.29.2",
     "diff": "^8.0.3",
     "highlight.js": "^11.11.1",
+    "html2canvas": "^1.4.1",
     "marked": "^17.0.2",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "html2canvas": "^1.4.1",
     "react-json-view-lite": "^2.1.0",
+    "react-virtuoso": "^4.18.3",
     "vite": "^6.3.5"
   },
   "dependencies": {

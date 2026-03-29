@@ -20,6 +20,7 @@ import SnapLineOverlay from './SnapLineOverlay';
 import PtyPromptBubbles from './PtyPromptBubbles';
 import RoleFilterBar from './RoleFilterBar';
 import ChatInputBar from './ChatInputBar';
+import { Virtuoso } from 'react-virtuoso';
 import { isMobile } from '../env';
 import { t } from '../i18n';
 import { apiUrl } from '../utils/apiUrl';
@@ -32,6 +33,15 @@ const QUEUE_THRESHOLD = 20;
 const MOBILE_ITEM_LIMIT = 240;
 const MOBILE_LOAD_MORE_STEP = 100;
 
+// 稳定空对象引用，避免每次 render 创建新 {} 导致子组件重渲染
+const EMPTY_OBJ = {};
+const EMPTY_MAP = {};
+
+// Virtuoso custom Scroller — 定义在类外部，避免每次 render 创建新组件引用
+const VirtuosoScroller = React.forwardRef((props, ref) => (
+  <div ref={ref} {...props} className={styles.container} />
+));
+
 function randomInterval() {
   return 100 + Math.random() * 50;
 }
@@ -40,6 +50,7 @@ class ChatView extends React.Component {
   constructor(props) {
     super(props);
     this.containerRef = React.createRef();
+    this.virtuosoRef = React.createRef();
     this.splitContainerRef = React.createRef();
     this.innerSplitRef = React.createRef();
 
@@ -72,7 +83,7 @@ class ChatView extends React.Component {
       ptyPrompt: null,
       ptyPromptHistory: [],
       inputSuggestion: null,
-      fileExplorerOpen: localStorage.getItem('ccv_fileExplorerOpen') !== 'false',
+      fileExplorerOpen: !isMobile && localStorage.getItem('ccv_fileExplorerOpen') !== 'false',
       currentFile: null,
       currentGitDiff: null,
       scrollToLine: null,
@@ -190,7 +201,7 @@ class ChatView extends React.Component {
     if (this.props.cliMode) {
       this.connectInputWs();
     }
-    this._bindStickyScroll();
+    if (!isMobile) this._bindStickyScroll();
     // 初始化时吸附到 60cols
     if (this.state.needsInitialSnap && this.props.cliMode && this.props.terminalVisible) {
       this._snapToInitialPosition();
@@ -278,15 +289,19 @@ class ChatView extends React.Component {
     // mobileChatVisible: scroll to bottom when becoming visible
     if (isMobile && this.props.mobileChatVisible && !prevProps.mobileChatVisible) {
       requestAnimationFrame(() => {
-        const el = this.containerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
+        if (this.virtuosoRef.current) {
+          this.virtuosoRef.current.scrollToIndex({ index: 'LAST' });
+        } else {
+          const el = this.containerRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        }
       });
     }
     // cliMode 异步生效后建立 WebSocket 连接
     if (!prevProps.cliMode && this.props.cliMode) {
       this.connectInputWs();
     }
-    this._rebindStickyEl();
+    if (!isMobile) this._rebindStickyEl();
   }
 
   componentWillUnmount() {
@@ -301,7 +316,7 @@ class ChatView extends React.Component {
     if (this._waitForPtyTimer) clearTimeout(this._waitForPtyTimer);
     if (this._planFeedbackTimer) clearTimeout(this._planFeedbackTimer);
     this._unbindScrollFade();
-    this._unbindStickyScroll();
+    if (!isMobile) this._unbindStickyScroll();
     if (this._inputWs) {
       this._inputWs.close();
       this._inputWs = null;
@@ -337,6 +352,23 @@ class ChatView extends React.Component {
   }
 
   scrollToBottom() {
+    // 移动端：Virtuoso API
+    if (isMobile && this.virtuosoRef.current) {
+      if (this._scrollTargetIdx != null) {
+        this.virtuosoRef.current.scrollToIndex({ index: this._scrollTargetIdx, align: 'center' });
+        const targetTs = this.props.scrollToTimestamp;
+        this._scrollTargetRef = React.createRef();
+        if (targetTs) {
+          this.setState({ highlightTs: targetTs, highlightFading: false });
+          this._bindScrollFade();
+        }
+        if (this.props.onScrollTsDone) this.props.onScrollTsDone();
+        return;
+      }
+      // stickyBottom 由 Virtuoso followOutput 自动处理
+      return;
+    }
+    // 桌面端：原有逻辑
     if (this._scrollTargetRef.current) {
       const targetEl = this._scrollTargetRef.current;
       const container = this.containerRef.current;
@@ -403,31 +435,50 @@ class ChatView extends React.Component {
 
   handleStickToBottom = () => {
     this.setState({ stickyBottom: true }, () => {
-      const el = this.containerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      if (isMobile && this.virtuosoRef.current) {
+        this.virtuosoRef.current.scrollToIndex({ index: 'LAST', behavior: 'smooth' });
+      } else {
+        const el = this.containerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      }
     });
   };
 
   handleLoadMore = () => {
     this._mobileExtraItems += MOBILE_LOAD_MORE_STEP;
-    const el = this.containerRef.current;
-    const prevScrollHeight = el ? el.scrollHeight : 0;
-    const prevScrollTop = el ? el.scrollTop : 0;
+    const prevLen = this.state.allItems?.length || 0;
     const rawItems = this.buildAllItems();
     const allItems = this._applyMobileSlice(rawItems);
-    this.setState({ allItems, lastResponseItems: this._lastResponseItems, visibleCount: allItems.length }, () => {
-      if (el) {
-        const newScrollHeight = el.scrollHeight;
-        el.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
-      }
-    });
+    const addedCount = allItems.length - prevLen;
+    if (isMobile && this.virtuosoRef.current) {
+      this.setState({ allItems, lastResponseItems: this._lastResponseItems, visibleCount: allItems.length }, () => {
+        if (this.virtuosoRef.current && addedCount > 0) {
+          this.virtuosoRef.current.scrollToIndex({ index: addedCount, align: 'start' });
+        }
+      });
+    } else {
+      const el = this.containerRef.current;
+      const prevScrollHeight = el ? el.scrollHeight : 0;
+      const prevScrollTop = el ? el.scrollTop : 0;
+      this.setState({ allItems, lastResponseItems: this._lastResponseItems, visibleCount: allItems.length }, () => {
+        if (el) {
+          const newScrollHeight = el.scrollHeight;
+          el.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+        }
+      });
+    }
   };
+
+  _getScrollContainer() {
+    return isMobile ? this._virtuosoScrollerEl : this.containerRef.current;
+  }
 
   _bindScrollFade() {
     this._unbindScrollFade();
-    const container = this.containerRef.current;
+    const container = this._getScrollContainer();
     if (!container) return;
     this._scrollFadeIgnoreFirst = true;
+    this._scrollFadeBoundEl = container;
     this._onScrollFade = () => {
       if (this._scrollFadeIgnoreFirst) {
         this._scrollFadeIgnoreFirst = false;
@@ -443,8 +494,9 @@ class ChatView extends React.Component {
   }
 
   _unbindScrollFade() {
-    if (this._onScrollFade && this.containerRef.current) {
-      this.containerRef.current.removeEventListener('scroll', this._onScrollFade);
+    if (this._onScrollFade && this._scrollFadeBoundEl) {
+      this._scrollFadeBoundEl.removeEventListener('scroll', this._onScrollFade);
+      this._scrollFadeBoundEl = null;
       this._onScrollFade = null;
     }
   }
@@ -505,7 +557,7 @@ class ChatView extends React.Component {
       const content = msg.content;
       const ts = msg._timestamp || null;
       const reqIdx = ts ? tsToIndex[ts] : undefined;
-      const viewReqProps = reqIdx != null && onViewRequest ? { requestIndex: reqIdx, onViewRequest } : {};
+      const viewReqProps = reqIdx != null && onViewRequest ? { requestIndex: reqIdx, onViewRequest } : EMPTY_OBJ;
 
       if (msg.role === 'user') {
         if (Array.isArray(content)) {
@@ -782,7 +834,7 @@ class ChatView extends React.Component {
                 <Divider style={{ borderColor: '#2a2a2a', margin: '8px 0' }}>
                   <Text type="secondary" className={styles.lastResponseLabel}>{t('ui.lastResponse')}</Text>
                 </Divider>
-                <ChatMessage key="resp-asst" role="assistant" content={respContent} timestamp={session.entryTimestamp} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} toolResultMap={{}} askAnswerMap={{}} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} lastPendingAskId={respLastPendingAskId} lastPendingPlanId={respLastPendingPlanId} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} ptyPrompt={this.state.ptyPrompt} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} cliMode={this.props.cliMode} onAskQuestionSubmit={this.handleAskQuestionSubmit} onOpenFile={this.handleOpenToolFilePath} />
+                <ChatMessage key="resp-asst" role="assistant" content={respContent} timestamp={session.entryTimestamp} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} toolResultMap={EMPTY_MAP} askAnswerMap={EMPTY_MAP} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} lastPendingAskId={respLastPendingAskId} lastPendingPlanId={respLastPendingPlanId} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} ptyPrompt={this.state.ptyPrompt} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} cliMode={this.props.cliMode} onAskQuestionSubmit={this.handleAskQuestionSubmit} onOpenFile={this.handleOpenToolFilePath} />
               </React.Fragment>
             );
           }
@@ -1417,7 +1469,7 @@ class ChatView extends React.Component {
       this.setState({ inputSuggestion: null, inputEmpty: false });
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       this.handleInputSend();
     }
@@ -1768,30 +1820,61 @@ class ChatView extends React.Component {
     ) : (
       <div className={styles.messageListWrap}>
         {roleFilterBar}
-        <div
-          ref={this.containerRef}
-          className={styles.container}
-        >
-          {loadMoreBtn}
-          {visible.map((item, i) => {
-            const isScrollTarget = i === targetIdx;
-            const needsHighlight = i === highlightIdx;
-            let el = item;
-            if (needsHighlight) {
-              el = React.cloneElement(el, { highlight: highlightFading ? 'fading' : 'active' });
-            }
-            return isScrollTarget
-              ? <div key={item.key + '-anchor'} ref={this._scrollTargetRef}>{el}</div>
-              : el;
-          })}
-          {filteredLastResponseItems && (
-            targetIdx != null && targetIdx >= visible.length
-              ? <div key="last-resp-anchor" ref={this._scrollTargetRef}>{filteredLastResponseItems}</div>
-              : filteredLastResponseItems
-          )}
-          {pendingBubble}
-          {promptBubbles}
-        </div>
+        {isMobile ? (
+          this._virtuosoHeader = loadMoreBtn,
+          this._virtuosoFooter = <>{filteredLastResponseItems}{pendingBubble}{promptBubbles}</>,
+          <Virtuoso
+            ref={this.virtuosoRef}
+            className={styles.mobileVirtuoso}
+            data={visible}
+            followOutput={this.state.stickyBottom ? 'smooth' : false}
+            atBottomStateChange={(atBottom) => {
+              if (atBottom !== this.state.stickyBottom) this.setState({ stickyBottom: atBottom });
+            }}
+            atBottomThreshold={30}
+            increaseViewportBy={{ top: 400, bottom: 200 }}
+            computeItemKey={(index) => visible[index]?.key || `v-${index}`}
+            itemContent={(index) => {
+              const item = visible[index];
+              const isScrollTarget = index === targetIdx;
+              const needsHighlight = index === highlightIdx;
+              let el = item;
+              if (needsHighlight) el = React.cloneElement(el, { highlight: highlightFading ? 'fading' : 'active' });
+              return isScrollTarget ? <div ref={this._scrollTargetRef}>{el}</div> : el;
+            }}
+            scrollerRef={(ref) => { this._virtuosoScrollerEl = ref; }}
+            components={this._virtuosoComponents || (this._virtuosoComponents = {
+              Scroller: VirtuosoScroller,
+              Header: () => this._virtuosoHeader,
+              Footer: () => this._virtuosoFooter,
+            })}
+          />
+        ) : (
+          <div
+            ref={this.containerRef}
+            className={styles.container}
+          >
+            {loadMoreBtn}
+            {visible.map((item, i) => {
+              const isScrollTarget = i === targetIdx;
+              const needsHighlight = i === highlightIdx;
+              let el = item;
+              if (needsHighlight) {
+                el = React.cloneElement(el, { highlight: highlightFading ? 'fading' : 'active' });
+              }
+              return isScrollTarget
+                ? <div key={item.key + '-anchor'} ref={this._scrollTargetRef}>{el}</div>
+                : el;
+            })}
+            {filteredLastResponseItems && (
+              targetIdx != null && targetIdx >= visible.length
+                ? <div key="last-resp-anchor" ref={this._scrollTargetRef}>{filteredLastResponseItems}</div>
+                : filteredLastResponseItems
+            )}
+            {pendingBubble}
+            {promptBubbles}
+          </div>
+        )}
         {stickyBtn}
       </div>
     );

@@ -27,6 +27,8 @@ function ChatImage({ src, alt, fallbackText }) {
       src={src}
       alt={alt}
       className={styles.chatImageImg}
+      loading="lazy"
+      decoding="async"
       onClick={() => window.open(src, '_blank')}
       onError={() => setFailed(true)}
     />
@@ -43,6 +45,28 @@ class ChatMessage extends React.Component {
       planFeedbackOptNumber: null,
       planApprovalSubmitting: false,
     };
+  }
+
+  shouldComponentUpdate(nextProps, nextState) {
+    if (this.state !== nextState) return true;
+    const p = this.props, n = nextProps;
+    // 逐字段浅比较核心 prop，避免 inline {} 和 computed values 导致的无效重渲染
+    return p.role !== n.role || p.content !== n.content || p.text !== n.text ||
+      p.timestamp !== n.timestamp || p.highlight !== n.highlight ||
+      p.collapseToolResults !== n.collapseToolResults || p.expandThinking !== n.expandThinking ||
+      p.showThinkingSummaries !== n.showThinkingSummaries ||
+      p.toolResultMap !== n.toolResultMap || p.readContentMap !== n.readContentMap ||
+      p.editSnapshotMap !== n.editSnapshotMap || p.askAnswerMap !== n.askAnswerMap ||
+      p.planApprovalMap !== n.planApprovalMap || p.latestPlanContent !== n.latestPlanContent ||
+      p.ptyPrompt !== n.ptyPrompt || p.cliMode !== n.cliMode ||
+      p.lastPendingAskId !== n.lastPendingAskId || p.lastPendingPlanId !== n.lastPendingPlanId ||
+      p.activePlanPrompt !== n.activePlanPrompt || p.activeDangerousPrompt !== n.activeDangerousPrompt ||
+      p.requestIndex !== n.requestIndex || p.label !== n.label || p.isTeammate !== n.isTeammate ||
+      p.userProfile !== n.userProfile || p.modelInfo !== n.modelInfo ||
+      p.resultText !== n.resultText || p.toolName !== n.toolName ||
+      p.onViewRequest !== n.onViewRequest || p.onOpenFile !== n.onOpenFile ||
+      p.onPlanApprovalClick !== n.onPlanApprovalClick || p.onPlanFeedbackSubmit !== n.onPlanFeedbackSubmit ||
+      p.onDangerousApprovalClick !== n.onDangerousApprovalClick || p.onAskQuestionSubmit !== n.onAskQuestionSubmit;
   }
 
   componentDidUpdate(prevProps) {

@@ -330,7 +330,7 @@ class Mobile extends AppBase {
                   onViewRequest={null}
                   scrollToTimestamp={null}
                   onScrollTsDone={() => {}}
-                  cliMode={false}
+                  cliMode={this.state.cliMode}
                   terminalVisible={false}
                   mobileChatVisible={this.state.mobileChatVisible}
                   fileLoading={this.state.fileLoading}

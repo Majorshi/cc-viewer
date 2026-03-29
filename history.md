@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.6.60 (2026-03-29)
+
+- Feature: mobile incremental SSE loading — server supports `since` filter, client Map-based dedup merge with empty delta short-circuit
+- Feature: ChatView mobile virtualization via react-virtuoso — reduces DOM nodes from ~24000 to ~2000
+- Perf: `_processEntries` merges 4 O(n) full-array passes into single loop (timestamp assignment + session building + filtering + index rebuild)
+- Perf: `load_chunk` setState throttled via requestAnimationFrame (500×/s → ~60×/s)
+- Perf: ChatMessage `shouldComponentUpdate` with stable prop references (EMPTY_OBJ/EMPTY_MAP constants)
+- Perf: ChatImage `loading="lazy"` + `decoding="async"` for offscreen images
+- UI: ChatInputBar redesigned with "+" menu, file upload, click-outside-to-close overlay
+- UI: mobile-only enlarged input controls via `@media (max-width: 768px)`
+- Fix: mobile `cliMode` prop passed correctly to ChatView
+- Fix: mobile file explorer defaults to closed
+- Fix: CJK IME input guard (`isComposing` + keyCode 229) prevents premature Enter send
+
 ## 1.6.59 (2026-03-29)
 
 - Feature: auto-inject AskUserQuestion PreToolUse hook into `~/.claude/settings.json` on CLI startup (`ensureAskHook`)

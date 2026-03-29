@@ -610,12 +610,14 @@ async function handleRequest(req, res) {
       res.write(`event: resume_prompt\ndata: ${JSON.stringify({ recentFileName: _resumeState.recentFileName })}\n\n`);
     }
 
-    // 流式发送原始 delta 条目，客户端自行重建（避免 server OOM）
-    // 注：streamRawEntriesAsync 不支持 since 过滤，始终发送全量数据
-    const total = countLogEntries(LOG_FILE);
-    res.write(`event: load_start\ndata: ${JSON.stringify({ total, incremental: false })}\n\n`);
+    // 增量加载参数：移动端带 since/cc/project 请求增量数据
+    const sinceParam = parsedUrl.searchParams.get('since');
+    const ccParam = parseInt(parsedUrl.searchParams.get('cc'), 10) || 0;
+    const projectParam = parsedUrl.searchParams.get('project');
+    const projectMatch = !projectParam || projectParam === (_projectName || '');
+    const useIncremental = !!(sinceParam && ccParam > 0 && projectMatch && !isNaN(new Date(sinceParam).getTime()));
 
-    // 流式分段发送 + 追踪最新 MainAgent 的 KV-Cache 和 context_window
+    // KV-Cache / context_window 追踪（扫描全量条目，不受 since 过滤影响）
     let latestKvCache = null;
     let latestContextWindow = null;
     let pushedContextWindow = false;
@@ -626,22 +628,35 @@ async function handleRequest(req, res) {
       res.write('event: load_chunk\ndata: [');
       res.write(raw.includes('\n') ? raw.replace(/\n/g, '') : raw);
       res.write(']\n\n');
-      // 轻量追踪最新 MainAgent 的 KV-Cache 和 context_window（仅 regex 检测）
-      if (raw.includes('"mainAgent":true') || raw.includes('"mainAgent": true')) {
-        try {
-          const entry = JSON.parse(raw);
-          if (isMainAgentEntry(entry)) {
-            const cached = extractCachedContent(entry);
-            if (cached) latestKvCache = cached;
-            const usage = entry.response?.body?.usage;
-            if (usage) {
-              const contextSize = getContextSizeForModel(entry.body?.model);
-              const cw = buildContextWindowEvent(usage, contextSize);
-              if (cw) latestContextWindow = cw;
+    }, {
+      since: useIncremental ? sinceParam : undefined,
+      onScan: (raw) => {
+        // 轻量追踪最新 MainAgent 的 KV-Cache 和 context_window（仅 regex 检测）
+        if (raw.includes('"mainAgent":true') || raw.includes('"mainAgent": true')) {
+          try {
+            const entry = JSON.parse(raw);
+            if (isMainAgentEntry(entry)) {
+              const cached = extractCachedContent(entry);
+              if (cached) latestKvCache = cached;
+              const usage = entry.response?.body?.usage;
+              if (usage) {
+                const contextSize = getContextSizeForModel(entry.body?.model);
+                const cw = buildContextWindowEvent(usage, contextSize);
+                if (cw) latestContextWindow = cw;
+              }
             }
-          }
-        } catch { }
-      }
+          } catch { }
+        }
+      },
+      onReady: ({ totalCount }) => {
+        // Pass 1 完成、Pass 2 开始前：发送 load_start
+        // 增量模式下不显示 loading 遮罩，非增量模式显示进度
+        if (!useIncremental) {
+          res.write(`event: load_start\ndata: ${JSON.stringify({ total: totalCount, incremental: false })}\n\n`);
+        } else {
+          res.write(`event: load_start\ndata: ${JSON.stringify({ total: totalCount, incremental: true })}\n\n`);
+        }
+      },
     });
 
     res.write(`event: load_end\ndata: {}\n\n`);

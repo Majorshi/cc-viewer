@@ -5,7 +5,7 @@ import { isMobile } from './env';
 import WorkspaceList from './components/WorkspaceList';
 import OpenFolderIcon from './components/OpenFolderIcon';
 import { t, getLang, setLang } from './i18n';
-import { formatTokenCount, filterRelevantRequests, appendCacheLossMap, extractCachedContent } from './utils/helpers';
+import { formatTokenCount, filterRelevantRequests, isRelevantRequest, appendCacheLossMap, extractCachedContent } from './utils/helpers';
 import { isMainAgent } from './utils/contentFilter';
 import { apiUrl } from './utils/apiUrl';
 import { saveEntries, loadEntries, clearEntries, getCacheMeta } from './utils/entryCache';
@@ -104,6 +104,63 @@ class AppBase extends React.Component {
     this._sseSlimmer = null;
   }
 
+  /**
+   * 单次遍历完成 timestamp 赋值 + session 构建 + 过滤 + index 重建。
+   * 合并 assignMessageTimestamps + buildSessionsFromEntries + filterRelevantRequests + _rebuildRequestIndex，
+   * 减少 3 次 O(n) 全量扫描。
+   */
+  _processEntries(entries) {
+    let timestamps = [];
+    let prevUserId = null;
+    let sessions = [];
+    const filtered = [];
+
+    // _rebuildRequestIndex 内联
+    this._requestIndexMap.clear();
+    this._cacheLossProcessedCount = 0;
+    this._cacheLossLastMainAgent = null;
+    this._cacheLossMap = new Map();
+    this._lastKvCacheContent = null;
+    this._sseSlimmer = null;
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+
+      // requestIndex
+      this._requestIndexMap.set(`${entry.timestamp}|${entry.url}`, i);
+
+      // filterRelevant
+      if (isRelevantRequest(entry)) filtered.push(entry);
+
+      // assignTimestamps + buildSessions（仅 mainAgent）
+      if (isMainAgent(entry) && entry.body && Array.isArray(entry.body.messages)) {
+        const messages = entry.body.messages;
+        const count = entry._messageCount || messages.length;
+        const userId = entry.body.metadata?.user_id || null;
+        const timestamp = entry.timestamp || new Date().toISOString();
+
+        const prevCount = timestamps.length;
+        const isNewSession = prevCount > 0 && (
+          (count < prevCount * 0.5 && (prevCount - count) > 4) ||
+          (prevUserId && userId && userId !== prevUserId)
+        );
+        if (isNewSession) timestamps = [];
+        for (let j = timestamps.length; j < count; j++) timestamps.push(timestamp);
+        if (messages.length > 0) {
+          for (let j = 0; j < messages.length; j++) messages[j]._timestamp = timestamps[j];
+        }
+        prevUserId = userId;
+
+        // session 合并（跳过 _slimmed）
+        if (!entry._slimmed) {
+          sessions = this.mergeMainAgentSessions(sessions, entry);
+        }
+      }
+    }
+
+    return { mainAgentSessions: sessions, filtered };
+  }
+
   componentDidMount() {
     // 获取 claude settings（showThinkingSummaries 等）
     fetch(apiUrl('/api/claude-settings')).then(r => r.json()).then(data => {
@@ -156,10 +213,7 @@ class AppBase extends React.Component {
         if (isMobile && projectName && !logfile && this.state.requests.length === 0) {
           loadEntries(projectName).then(cached => {
             if (cached && this.state.requests.length === 0) {
-              this.assignMessageTimestamps(cached);
-              const mainAgentSessions = this.buildSessionsFromEntries(cached);
-              const filtered = filterRelevantRequests(cached);
-              this._rebuildRequestIndex(cached);
+              const { mainAgentSessions, filtered } = this._processEntries(cached);
               this.setState({
                 requests: cached,
                 selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
@@ -203,6 +257,7 @@ class AppBase extends React.Component {
     if (this._localLogES) { this._localLogES.close(); this._localLogES = null; }
     if (this._autoSelectTimer) clearTimeout(this._autoSelectTimer);
     if (this._loadingCountTimer) cancelAnimationFrame(this._loadingCountTimer);
+    if (this._loadingCountRafId) cancelAnimationFrame(this._loadingCountRafId);
     if (this._cacheSaveTimer) clearTimeout(this._cacheSaveTimer);
     if (this._sseTimeoutTimer) clearTimeout(this._sseTimeoutTimer);
     if (this._sseReconnectTimer) clearTimeout(this._sseReconnectTimer);
@@ -263,7 +318,7 @@ class AppBase extends React.Component {
       if (isMobile) {
         const meta = getCacheMeta();
         if (meta && meta.lastTs && meta.count > 0) {
-          url = `/events?since=${encodeURIComponent(meta.lastTs)}&cc=${meta.count}`;
+          url = `/events?since=${encodeURIComponent(meta.lastTs)}&cc=${meta.count}&project=${encodeURIComponent(meta.projectName || '')}`;
           hasCache = true;
         }
       }
@@ -325,33 +380,46 @@ class AppBase extends React.Component {
           const chunk = JSON.parse(event.data);
           if (Array.isArray(chunk)) {
             this._chunkedEntries.push(...chunk);
-            // 增量模式下静默累积，不更新 loading 计数
-            if (!this._isIncremental) {
-              this.setState({ fileLoadingCount: this._chunkedEntries.length });
+            // 增量模式下静默累积；非增量模式用 rAF 节流，每帧最多更新一次计数
+            if (!this._isIncremental && !this._loadingCountRafId) {
+              this._loadingCountRafId = requestAnimationFrame(() => {
+                this._loadingCountRafId = null;
+                this.setState({ fileLoadingCount: this._chunkedEntries.length });
+              });
             }
           }
         } catch { }
       });
       this.eventSource.addEventListener('load_end', () => {
+        if (this._loadingCountRafId) { cancelAnimationFrame(this._loadingCountRafId); this._loadingCountRafId = null; }
         const delta = this._chunkedEntries;
         this._chunkedEntries = [];
         this._chunkedTotal = 0;
         const isIncremental = this._isIncremental;
         this._isIncremental = false;
 
-        // 增量模式：将增量数据拼接到已有缓存后面
-        const rawEntries = (isIncremental && isMobile && this.state.requests.length > 0)
-          ? [...this.state.requests, ...delta]
-          : delta;
+        // 增量模式：Map 去重合并（delta 条目覆盖同 key 的缓存条目）
+        let rawEntries;
+        if (isIncremental && isMobile && this.state.requests.length > 0) {
+          if (delta.length === 0) {
+            // 无新数据，缓存已是最新，跳过重建
+            this.setState({ fileLoading: false, fileLoadingCount: 0 });
+            return;
+          }
+          const eKey = (e, i) => (e.timestamp && e.url) ? `${e.timestamp}|${e.url}` : `__nokey_c${i}`;
+          const map = new Map();
+          this.state.requests.forEach((e, i) => map.set(eKey(e, i), e));
+          delta.forEach((e, i) => map.set((e.timestamp && e.url) ? `${e.timestamp}|${e.url}` : `__nokey_d${i}`, e));
+          rawEntries = Array.from(map.values());
+        } else {
+          rawEntries = delta;
+        }
 
         // Delta 重建：server 发送原始 delta 条目，客户端重建为完整 messages
         const entries = Array.isArray(rawEntries) ? reconstructEntries(rawEntries) : rawEntries;
 
         if (Array.isArray(entries) && entries.length > 0) {
-          this.assignMessageTimestamps(entries);
-          const mainAgentSessions = this.buildSessionsFromEntries(entries);
-          const filtered = filterRelevantRequests(entries);
-          this._rebuildRequestIndex(entries);
+          const { mainAgentSessions, filtered } = this._processEntries(entries);
           this.setState({
             requests: entries,
             selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
@@ -370,10 +438,7 @@ class AppBase extends React.Component {
         try {
           const entries = JSON.parse(event.data);
           if (Array.isArray(entries)) {
-            this.assignMessageTimestamps(entries);
-            const mainAgentSessions = this.buildSessionsFromEntries(entries);
-            const filtered = filterRelevantRequests(entries);
-            this._rebuildRequestIndex(entries);
+            const { mainAgentSessions, filtered } = entries.length > 0 ? this._processEntries(entries) : { mainAgentSessions: [], filtered: [] };
             if (entries.length > 0) {
               this.animateLoadingCount(entries.length, () => {
                 this.setState({
@@ -504,10 +569,7 @@ class AppBase extends React.Component {
       // Delta 重建：server 发送原始 delta 条目，客户端重建为完整 messages
       const reconstructed = reconstructEntries(entries);
       if (Array.isArray(reconstructed) && reconstructed.length > 0) {
-        this.assignMessageTimestamps(reconstructed);
-        const mainAgentSessions = this.buildSessionsFromEntries(reconstructed);
-        const filtered = filterRelevantRequests(reconstructed);
-        this._rebuildRequestIndex(reconstructed);
+        const { mainAgentSessions, filtered } = this._processEntries(reconstructed);
         this.setState({
           requests: reconstructed,
           selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
@@ -662,48 +724,6 @@ class AppBase extends React.Component {
   };
 
   // ─── 数据处理 ───────────────────────────────────────────
-
-  assignMessageTimestamps(entries) {
-    let timestamps = [];
-    let prevUserId = null;
-    for (const entry of entries) {
-      if (!isMainAgent(entry) || !entry.body || !Array.isArray(entry.body.messages)) continue;
-      const messages = entry.body.messages;
-      const count = entry._messageCount || messages.length;
-      const userId = entry.body.metadata?.user_id || null;
-      const timestamp = entry.timestamp || new Date().toISOString();
-
-      const prevCount = timestamps.length;
-      const isNewSession = prevCount > 0 && (
-        (count < prevCount * 0.5 && (prevCount - count) > 4) ||
-        (prevUserId && userId && userId !== prevUserId)
-      );
-      if (isNewSession) {
-        timestamps = [];
-      }
-
-      for (let i = timestamps.length; i < count; i++) {
-        timestamps.push(timestamp);
-      }
-
-      if (messages.length > 0) {
-        for (let i = 0; i < messages.length; i++) {
-          messages[i]._timestamp = timestamps[i];
-        }
-      }
-      prevUserId = userId;
-    }
-  }
-
-  buildSessionsFromEntries(entries) {
-    let sessions = [];
-    for (const entry of entries) {
-      if (isMainAgent(entry) && entry.body && Array.isArray(entry.body.messages) && !entry._slimmed) {
-        sessions = this.mergeMainAgentSessions(sessions, entry);
-      }
-    }
-    return sessions;
-  }
 
   mergeMainAgentSessions(prevSessions, entry) {
     const newMessages = entry.body.messages;
@@ -1134,17 +1154,10 @@ class AppBase extends React.Component {
       return;
     }
     this.animateLoadingCount(entries.length, () => {
-      let mainAgentSessions = [];
-      for (const entry of entries) {
-        if (isMainAgent(entry) && entry.body && Array.isArray(entry.body.messages)) {
-          mainAgentSessions = this.mergeMainAgentSessions(mainAgentSessions, entry);
-        }
-      }
-      const filtered = filterRelevantRequests(entries);
+      const { mainAgentSessions, filtered } = this._processEntries(entries);
       this._isLocalLog = true;
       this._localLogFile = fileNames.length === 1 ? fileNames[0] : `${fileNames.length} files`;
       if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
-      this._rebuildRequestIndex(entries);
       this.setState({
         requests: entries,
         selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
