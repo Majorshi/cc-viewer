@@ -1,24 +1,25 @@
 import React from 'react';
-import { Empty, Typography, Divider, Spin, Popover, Modal, Tooltip } from 'antd';
+import { Empty, Typography, Divider, Spin } from 'antd';
 import ChatMessage from './ChatMessage';
-import TerminalPanel, { uploadFileAndGetPath } from './TerminalPanel';
+import TerminalPanel from './TerminalPanel';
 import FileExplorer from './FileExplorer';
 import FileContentView from './FileContentView';
 import ImageViewer from './ImageViewer';
 import GitChanges from './GitChanges';
 import GitDiffView from './GitDiffView';
-import { extractToolResultText, getModelInfo, getSvgAvatar } from '../utils/helpers';
+import { getModelInfo } from '../utils/helpers';
 import { getTeammateAvatar } from '../utils/teammateAvatars';
-import { renderMarkdown } from '../utils/markdown';
-import defaultModelAvatarUrl from '../img/default-model-avatar.svg';
 import { isSystemText, classifyUserContent, isMainAgent, isTeammate } from '../utils/contentFilter';
 import { classifyRequest, formatRequestTag, formatTeammateLabel } from '../utils/requestType';
 import { buildChunksForAnswer } from '../utils/ptyChunkBuilder';
 import { isPlanApprovalPrompt, isDangerousOperationPrompt } from '../utils/promptClassifier';
 import { isImageFile, isMutatingCommand } from '../utils/commandValidator';
-import { extractTeamSessions } from '../utils/teamSessionParser';
-import { createEmptyToolState, appendToolResultMap, cachedBuildToolResultMap, parseAskAnswerText, parsePlanApproval, getToolResultCache, setToolResultCache } from '../utils/toolResultBuilder';
-import { buildTeamModalData } from '../utils/teamModalBuilder';
+import { createEmptyToolState, appendToolResultMap, cachedBuildToolResultMap, getToolResultCache, setToolResultCache } from '../utils/toolResultBuilder';
+import { TeamButton, TeamModal } from './TeamSessionPanel';
+import SnapLineOverlay from './SnapLineOverlay';
+import PtyPromptBubbles from './PtyPromptBubbles';
+import RoleFilterBar from './RoleFilterBar';
+import ChatInputBar from './ChatInputBar';
 import { isMobile } from '../env';
 import { t } from '../i18n';
 import { apiUrl } from '../utils/apiUrl';
@@ -88,18 +89,8 @@ class ChatView extends React.Component {
       roleFilterOpen: false,
       roleFilterHidden: new Set(),
       teamModalSession: null,
-      teamGanttOpen: true,
-      activeAgentCard: null,
     };
     this._processedToolIds = new Set();
-    this._teamModalBodyRef = React.createRef();
-    this._ganttIndicatorRef = React.createRef();
-    this._ganttWrapRef = React.createRef();
-    this._teamTotalStart = 0;
-    this._teamTotalEnd = 0;
-    this._teamScrollRaf = null;
-    this._teamModalDataCache = null;
-    this._ganttTrackEl = null; // 缓存 querySelector 结果
     this._projectDirCache = null; // 缓存项目目录绝对路径
     this._fileRefreshTimer = null;
     this._gitRefreshTimer = null;
@@ -309,9 +300,6 @@ class ChatView extends React.Component {
     if (this._waitForWsTimer) clearTimeout(this._waitForWsTimer);
     if (this._waitForPtyTimer) clearTimeout(this._waitForPtyTimer);
     if (this._planFeedbackTimer) clearTimeout(this._planFeedbackTimer);
-    if (this._teamScrollRaf) cancelAnimationFrame(this._teamScrollRaf);
-    this._ganttTrackEl = null;
-    this._teamModalDataCache = null;
     this._unbindScrollFade();
     this._unbindStickyScroll();
     if (this._inputWs) {
@@ -979,6 +967,11 @@ class ChatView extends React.Component {
     }
 
     if (question && options) {
+      // Skip false positive: question looks like a file/directory path or status-bar output
+      if (/^[■\s]*[~\/.:]/.test(question) && /\//.test(question)) return;
+      // Skip false positive: question looks like Claude Code timing/status output (e.g. "*Crunchedfor2m18s")
+      if (/^[*■✦⏎]/.test(question)) return;
+
       const prev = this.state.ptyPrompt;
       const prompt = { question, options };
       // 同一问题只更新选项（光标移动），不重复推入历史
@@ -1453,6 +1446,16 @@ class ChatView extends React.Component {
     this.setState({ inputSuggestion: null, pendingInput: text }, () => this.scrollToBottom());
   };
 
+  handleUploadPath = (path) => {
+    const quoted = `"${path}"`;
+    const textarea = this._inputRef.current;
+    if (textarea) {
+      textarea.value = (textarea.value ? textarea.value + ' ' : '') + quoted;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      this.setState({ inputEmpty: false });
+    }
+  };
+
   handleSplitMouseDown = (e) => {
     e.preventDefault();
     this._resizing = true;
@@ -1627,403 +1630,6 @@ class ChatView extends React.Component {
     localStorage.setItem('cc-viewer-terminal-width', terminalPx.toString());
   }
 
-  _getTeamSessions() {
-    const requests = this.props.requests;
-    if (this._teamSessionsCache && this._teamSessionsCache.requests === requests) {
-      return this._teamSessionsCache.result;
-    }
-    const result = extractTeamSessions(requests);
-    this._teamSessionsCache = { requests, result };
-    return result;
-  }
-
-  renderTeamButton() {
-    const teamSessions = this._getTeamSessions();
-    if (teamSessions.length === 0) return null;
-    const content = (
-      <div className={styles.teamPopover}>
-        <div className={styles.teamPopoverTitle}>{t('ui.teamSessions')} ({teamSessions.length})</div>
-        {teamSessions.map((team, i) => {
-          const time = team.startTime ? new Date(team.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-          const status = team.endTime ? (team._inferredEnd ? '⏱' : '✓') : '●';
-          const statusColor = team.endTime ? (team._inferredEnd ? '#888' : '#52c41a') : '#faad14';
-          return (
-            <div key={i} className={styles.teamPopoverItem} onClick={() => this.setState({ teamModalSession: team })}>
-              <span className={styles.teamPopoverStatus} style={{ color: statusColor }}>{status}</span>
-              <span className={styles.teamPopoverName}>{team.name}</span>
-              <span className={styles.teamPopoverMeta}>{team.teammateCount}p · {team.taskCount}t</span>
-              <span className={styles.teamPopoverTime}>{time}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-    const hasActiveTeam = teamSessions.some(s => !s.endTime || s._inferredEnd);
-    return (
-      <Popover content={content} trigger="hover" placement="rightTop" overlayInnerStyle={{ background: '#1e1e1e', border: '1px solid #333', padding: 0 }}>
-        <button className={`${styles.navBtn} ${styles.teamBtnRelative}`} title={t('ui.teamSessions')}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-          {hasActiveTeam && <span className={styles.teamActiveSpinner} />}
-        </button>
-      </Popover>
-    );
-  }
-
-  onTeamModalScroll = () => {
-    if (this._teamScrollRaf) return;
-    this._teamScrollRaf = requestAnimationFrame(() => {
-      this._teamScrollRaf = null;
-      const container = this._teamModalBodyRef.current;
-      if (!container) return;
-      const containerTop = container.getBoundingClientRect().top;
-      let closestTs = null;
-      for (const child of container.children) {
-        const ts = child.getAttribute('data-timestamp');
-        if (!ts) continue;
-        const rect = child.getBoundingClientRect();
-        if (rect.bottom > containerTop) { closestTs = ts; break; }
-      }
-      if (!closestTs) return;
-      const tsMs = new Date(closestTs).getTime();
-      const total = this._teamTotalEnd - this._teamTotalStart || 1;
-      const pctVal = Math.max(0, Math.min(100, (tsMs - this._teamTotalStart) / total * 100));
-      const el = this._ganttIndicatorRef.current;
-      if (!el) return;
-      // 缓存 track 元素引用，避免每帧 querySelector
-      if (!this._ganttTrackEl || !this._ganttTrackEl.isConnected) {
-        this._ganttTrackEl = el.parentElement?.querySelector('[class*="teamGanttTrack"]');
-      }
-      const wrap = el.parentElement;
-      const track = this._ganttTrackEl;
-      if (track) {
-        const wrapRect = wrap.getBoundingClientRect();
-        const trackRect = track.getBoundingClientRect();
-        const trackLeft = trackRect.left - wrapRect.left;
-        const trackWidth = trackRect.width;
-        el.style.left = (trackLeft + trackWidth * pctVal / 100) + 'px';
-        // indicator 高度跟随滚动内容总高度，而非可视区域高度，
-        // 确保 agent 行数多（overflow-y: auto 滚动）时竖线贯穿所有行。
-        el.style.height = wrap.scrollHeight + 'px';
-      }
-    });
-  };
-
-  renderTeamGantt(teamAgents, teamTotalStart, teamTotalEnd, leadSegments) {
-    if (!teamAgents || teamAgents.length === 0) return null;
-    const totalMs = teamTotalEnd - teamTotalStart || 1;
-    const pct = (ms) => ((ms - teamTotalStart) / totalMs * 100).toFixed(2);
-    const widthPct = (start, end) => (((end - start) / totalMs) * 100).toFixed(2);
-    // 时间轴标记（均分 5 个刻度）
-    const ticks = [];
-    for (let t = 0; t <= 4; t++) {
-      const ms = teamTotalStart + (totalMs * t / 4);
-      const d = new Date(ms);
-      ticks.push({ pct: (t * 25), label: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
-    }
-    return (
-      <div>
-        <div
-          className={styles.teamGanttToggle}
-          onClick={() => this.setState(prev => ({ teamGanttOpen: !prev.teamGanttOpen }))}
-        >
-          {this.state.teamGanttOpen ? '▼' : '▶'} Timeline
-          {this.state.teamGanttOpen && (
-            <span
-              className={styles.ganttExportBtn}
-              title={t('ui.exportTimelinePng') || 'Export as PNG'}
-              onClick={(e) => {
-                e.stopPropagation();
-                const wrap = this._ganttWrapRef.current;
-                if (!wrap) return;
-                // 临时展开到全高，截图后恢复
-                const prevMaxH = wrap.style.maxHeight;
-                const prevH = wrap.style.height;
-                const prevOverflow = wrap.style.overflow;
-                wrap.style.maxHeight = 'none';
-                wrap.style.height = 'auto';
-                wrap.style.overflow = 'visible';
-                import('html2canvas').then(({ default: html2canvas }) => {
-                  html2canvas(wrap, { backgroundColor: '#0a0a0a', scale: 2, useCORS: true }).then(canvas => {
-                    wrap.style.maxHeight = prevMaxH;
-                    wrap.style.height = prevH;
-                    wrap.style.overflow = prevOverflow;
-                    const link = document.createElement('a');
-                    link.download = `team-timeline-${Date.now()}.png`;
-                    link.href = canvas.toDataURL('image/png');
-                    link.click();
-                  }).catch(() => {
-                    wrap.style.maxHeight = prevMaxH;
-                    wrap.style.height = prevH;
-                    wrap.style.overflow = prevOverflow;
-                  });
-                }).catch(() => {
-                  wrap.style.maxHeight = prevMaxH;
-                  wrap.style.height = prevH;
-                  wrap.style.overflow = prevOverflow;
-                });
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-            </span>
-          )}
-        </div>
-        {this.state.teamGanttOpen && (<>
-          <div ref={this._ganttWrapRef} className={styles.teamGanttWrap} style={this.state._ganttHeight ? { maxHeight: 'none', height: this.state._ganttHeight } : undefined}>
-            {/* team-lead 行：分段显示活动 */}
-            <div className={styles.teamGanttRow}>
-              <div className={`${styles.teamGanttLabel} ${styles.ganttLabelLead}`}>team-lead</div>
-              <div className={styles.teamGanttTrack}>
-                {leadSegments && leadSegments.map((seg, i) => {
-                  const bgColor = seg.label === 'thinking' ? '#722ed1' : seg.label === 'report-received' ? '#52c41a' : '#196ae1';
-                  const op = seg.label === 'idle' ? 0.15 : seg.label === 'text' ? 0.5 : seg.label === 'thinking' ? 0.4 : seg.label === 'report-received' ? 0.6 : 0.7;
-                  return <div key={`b${i}`} className={styles.teamGanttBar} title={seg.label} style={{
-                    left: pct(seg.start) + '%', width: widthPct(seg.start, seg.end) + '%',
-                    background: bgColor, opacity: op,
-                  }} />;
-                })}
-                {leadSegments && leadSegments.filter(s => s.label !== 'idle').map((seg, i) => {
-                  const tips = { create: 'Team Created', tasks: 'Tasks Created', spawn: 'Agents Spawned', msg: 'SendMessage', cleanup: 'Team Cleanup', text: 'Status Update', thinking: 'Thinking...', 'report-received': 'Report Received' };
-                  const dColor = seg.label === 'thinking' ? '#722ed1' : seg.label === 'report-received' ? '#52c41a' : '#196ae1';
-                  return <Tooltip key={`d${i}`} title={tips[seg.label] || seg.label}><span className={styles.teamGanttDiamond} style={{ left: pct(seg.start) + '%', color: dColor }}>◆</span></Tooltip>;
-                })}
-              </div>
-            </div>
-            {/* 各 agent 行：按事件节点分段显示 */}
-            {teamAgents.map((ag, i) => (
-              <div key={i} className={styles.teamGanttRow}>
-                <div className={`${styles.teamGanttLabel} ${styles.ganttLabelAgent}`}>{ag.name}</div>
-                <div className={styles.teamGanttTrack}>
-                  {ag.segments.map((seg, si) => {
-                    const isTool = seg.label.startsWith('tool:');
-                    const op = seg.label === 'spawn' ? 0.2 : seg.label === 'claim' ? 0.7 : seg.label === 'done' ? 0.4 : seg.label === 'shutdown' ? 0.1 : seg.label === 'report' ? 0.9 : isTool ? 0.5 : 0.5;
-                    return <div key={`b${si}`} className={styles.teamGanttBar} title={seg.label} style={{
-                      left: pct(seg.start) + '%',
-                      width: widthPct(seg.start, seg.end) + '%',
-                      background: '#eee', opacity: op,
-                    }} />;
-                  })}
-                  {ag.events.filter(ev => !ev.label.startsWith('tool:')).map((ev, ei) => {
-                    const tips = { spawn: 'Agent Spawned', claim: 'Task Claimed', done: 'Task Completed', shutdown: 'Shutdown Request', 'msg-in': 'Message Received', report: 'Report Submitted' };
-                    const tip = tips[ev.label] || ev.label;
-                    return <Tooltip key={`d${ei}`} title={`${ag.name}: ${tip}`}><span className={`${styles.teamGanttDiamond} ${styles.ganttLabelAgent}`} style={{ left: pct(ev.ts) + '%' }}>◆</span></Tooltip>;
-                  })}
-                </div>
-              </div>
-            ))}
-            {/* 时间轴 */}
-            <div className={`${styles.teamGanttRow} ${styles.ganttTimeAxisRow}`}>
-              <div className={styles.teamGanttLabel} />
-              <div className={`${styles.teamGanttTrack} ${styles.ganttTimeAxisTrack}`}>
-                {ticks.map((tk, i) => (
-                  <span key={i} className={styles.ganttTickLabel} style={{ left: tk.pct + '%' }}>{tk.label}</span>
-                ))}
-              </div>
-            </div>
-            {/* TaskUpdate 箭头：teammate 完成任务后指向目标（通常是 team-lead） */}
-            {(() => {
-              // 行高计算：每行 22px height + 3px margin-bottom = 25px，team-lead 是第 0 行
-              const rowH = 25;
-              const leadY = rowH / 2; // team-lead 行中心 y
-              const arrows = [];
-              teamAgents.forEach((ag, ai) => {
-                const agentY = (ai + 1) * rowH + rowH / 2;
-                // 完成箭头：用 doneTime（不依赖 events，因为 TaskUpdate completed 可能无 owner）
-                if (ag.doneTime) {
-                  const doneMs = new Date(ag.doneTime).getTime();
-                  arrows.push({ key: `${ai}-done`, xPct: pct(doneMs), fromY: agentY, toY: leadY, color: '#faad14' });
-                }
-                // 报告箭头：用 events 中的 report 事件
-                ag.events.filter(ev => ev.label === 'report').forEach((ev, ei) => {
-                  arrows.push({ key: `${ai}-rpt-${ei}`, xPct: pct(ev.ts), fromY: agentY, toY: leadY, color: '#52c41a' });
-                });
-              });
-              if (arrows.length === 0) return null;
-              const totalH = (teamAgents.length + 2) * rowH; // +2 for lead + time axis
-              return (
-                <svg className={styles.teamGanttArrows} style={{ height: totalH }}>
-                  <defs>
-                    <marker id="gantt-arrow-yellow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                      <path d="M0,1 L7,4 L0,7 Z" fill="#faad14" />
-                    </marker>
-                    <marker id="gantt-arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                      <path d="M0,1 L7,4 L0,7 Z" fill="#52c41a" />
-                    </marker>
-                  </defs>
-                  {arrows.map(a => (
-                    <line key={a.key}
-                      x1={a.xPct + '%'} y1={a.fromY}
-                      x2={a.xPct + '%'} y2={a.toY + 5}
-                      stroke={a.color} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.7"
-                      markerEnd={a.color === '#52c41a' ? 'url(#gantt-arrow-green)' : 'url(#gantt-arrow-yellow)'}
-                    />
-                  ))}
-                </svg>
-              );
-            })()}
-            {/* 滚动位置指示线 — 跨越所有 track 行 */}
-            <div ref={this._ganttIndicatorRef} className={`${styles.teamGanttIndicator} ${styles.ganttIndicatorInitial}`} />
-          </div>
-          <div
-            className={styles.teamGanttResizer}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              const wrap = this._ganttWrapRef.current;
-              if (!wrap) return;
-              const startY = e.clientY;
-              const startH = wrap.getBoundingClientRect().height;
-              const onMove = (ev) => {
-                const h = Math.max(60, startH + ev.clientY - startY);
-                this.setState({ _ganttHeight: h });
-              };
-              const onUp = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-              };
-              document.addEventListener('mousemove', onMove);
-              document.addEventListener('mouseup', onUp);
-            }}
-          />
-        </>)}
-      </div>
-    );
-  }
-
-  _getTeamModalData(team, requests, mainAgentSessions) {
-    const c = this._teamModalDataCache;
-    if (c && c.team === team && c.requests === requests && c.mainAgentSessions === mainAgentSessions) return c.result;
-    const result = buildTeamModalData(team, requests, mainAgentSessions);
-    this._teamModalDataCache = { team, requests, mainAgentSessions, result };
-    return result;
-  }
-
-  renderTeamModal() {
-    const team = this.state.teamModalSession;
-    if (!team) return null;
-    const { requests, mainAgentSessions, collapseToolResults, expandThinking } = this.props;
-    const { entries, teamAgents, leadSegments, teamTotalStart, teamTotalEnd, modelInfo, teamRequests } = this._getTeamModalData(team, requests, mainAgentSessions);
-
-    // 存储时间范围供 scroll handler 使用
-    this._teamTotalStart = teamTotalStart;
-    this._teamTotalEnd = teamTotalEnd;
-
-    return (
-      <Modal
-        open
-        onCancel={() => { this._ganttTrackEl = null; this.setState({ teamModalSession: null }); }}
-        footer={null}
-        closable
-        maskClosable
-        zIndex={1100}
-        width="calc(100vw - 80px)"
-        title={<span className={styles.teamModalTitle}>Team: {team.name}</span>}
-        styles={{
-          header: { background: '#111', borderBottom: '1px solid #2a2a2a', padding: '12px 20px' },
-          body: { background: '#0a0a0a', height: 'calc(100vh - 160px)', overflow: 'hidden', padding: 0 },
-          mask: { background: 'rgba(0,0,0,0.7)' },
-          content: { background: '#111', border: '1px solid #2a2a2a', borderRadius: 8, padding: 0 },
-        }}
-        centered
-      >
-        <div className={styles.teamModalLayout}>
-          {/* Left: Agent Cards */}
-          <div className={styles.teamAgentCards}>
-            <div className={`${styles.teamAgentCard} ${styles.teamLeadCard}`}>
-              <div className={styles.teamAgentCardHeader}>
-                {modelInfo?.svg
-                  ? <div className={styles.teamAgentAvatar} style={{ background: modelInfo.color || '#6b21a8' }} dangerouslySetInnerHTML={{ __html: modelInfo.svg }} />
-                  : <img src={defaultModelAvatarUrl} className={styles.teamAgentAvatar} alt="lead" />
-                }
-                <div className={styles.teamAgentName}>team-lead</div>
-              </div>
-              <div className={styles.teamAgentType}>orchestrator</div>
-              <div className={styles.teamAgentStatus} style={{ color: team.endTime ? (team._inferredEnd ? '#888' : '#52c41a') : '#faad14' }}>
-                {team.endTime ? (team._inferredEnd ? '⏱ ended' : '✓ done') : '● active'}
-              </div>
-            </div>
-            {teamAgents.map((ag, i) => {
-              const isDone = !!ag.doneTime;
-              const durSec = Math.round(ag.duration / 1000);
-              const durStr = durSec >= 60 ? `${Math.floor(durSec/60)}m${durSec%60}s` : `${durSec}s`;
-              // 该 teammate 的消息（从 entries 中过滤）
-              const agentMessages = entries.filter(e => e.type === 'sub-agent' && e.label && e.label.includes(ag.name));
-              const popContent = (
-                <div className={styles.teamAgentPopover}>
-                  {ag.teammateMessages && ag.teammateMessages.length > 0 && (
-                    <div className={styles.teamAgentPopTeammateMsg}>
-                      {ag.teammateMessages.map((tm, ti) => (
-                        <div key={ti}>
-                          {tm.summary && <div className={styles.teamAgentPopTmSummary}>{tm.summary}</div>}
-                          <div className={`${styles.teamAgentPopTmContent} chat-md`} dangerouslySetInnerHTML={{ __html: renderMarkdown(tm.content.length > 3000 ? tm.content.slice(0, 3000) + '\n\n...' : tm.content) }} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {ag.taskSubject && <div className={styles.teamAgentPopTask}>{ag.taskSubject}</div>}
-                  {agentMessages.length > 0 ? agentMessages.map((msg, mi) => {
-                    // 提取 text 内容
-                    const texts = (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-                    if (!texts.trim()) return null;
-                    return <div key={mi} className={`${styles.teamAgentPopMsg} chat-md`} dangerouslySetInnerHTML={{ __html: renderMarkdown(texts.length > 2000 ? texts.slice(0, 2000) + '\n\n...' : texts) }} />;
-                  }) : <div className={styles.agentNoMessages}>No messages</div>}
-                </div>
-              );
-              return (
-                <Popover key={i} content={popContent} trigger="click" placement="right" autoAdjustOverflow
-                  overlayInnerStyle={{ background: '#1e1e1e', border: '1px solid #333', padding: 0, maxWidth: 800, maxHeight: '70vh', overflowY: 'auto' }}
-                  onOpenChange={(open) => this.setState({ activeAgentCard: open ? i : null })}
-                >
-                  <div className={`${styles.teamAgentCard} ${styles.teamAgentCardClickable} ${this.state.activeAgentCard === i ? styles.teamAgentCardActive : ''}`}>
-                    <div className={styles.teamAgentCardHeader}>
-                      {(() => { const _a = getTeammateAvatar(ag.name); return <div className={styles.teamAgentAvatar} style={{ background: _a.color }} dangerouslySetInnerHTML={{ __html: _a.svg }} />; })()}
-                      <div className={styles.teamAgentName}>{ag.name}</div>
-                    </div>
-                    <div className={styles.teamAgentType}>{ag.type}</div>
-                    <div className={styles.teamAgentStatus} style={{ color: isDone ? '#52c41a' : '#faad14' }}>
-                      {isDone ? '✓ done' : '● working'} <span className={styles.agentStatusDurSuffix}>· {durStr}</span>
-                    </div>
-                  </div>
-                </Popover>
-              );
-            })}
-          </div>
-          {/* Right: Content */}
-          <div className={styles.teamModalContent}>
-            {this.renderTeamGantt(teamAgents, teamTotalStart, teamTotalEnd, leadSegments)}
-            <div className={styles.teamModalBody} ref={this._teamModalBodyRef} onScroll={this.onTeamModalScroll}>
-              {entries.map((entry, i) => (
-                <div key={`tw-${i}`} data-timestamp={entry.timestamp}>
-                  {entry.type === 'user' && <ChatMessage role="user" text={entry.text} timestamp={entry.timestamp} userProfile={this.props.userProfile} modelInfo={modelInfo} requestIndex={entry.requestIndex} onViewRequest={this.props.onViewRequest} />}
-                  {entry.type === 'assistant' && <ChatMessage role="assistant" content={entry.content} timestamp={entry.timestamp} modelInfo={entry.modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} toolResultMap={{}} askAnswerMap={{}} requestIndex={entry.requestIndex} onViewRequest={this.props.onViewRequest} />}
-                  {entry.type === 'sub-agent' && <ChatMessage role="sub-agent-chat" content={entry.content} toolResultMap={entry.toolResultMap} label={entry.label} isTeammate={entry.isTeammate} timestamp={entry.timestamp} collapseToolResults={collapseToolResults} expandThinking={expandThinking} requestIndex={entry.requestIndex} onViewRequest={this.props.onViewRequest} />}
-                  {entry.type === 'context' && <ChatMessage role="assistant" content={[{ type: 'text', text: entry.text }]} timestamp={entry.timestamp} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} toolResultMap={{}} askAnswerMap={{}} />}
-                  {entry.type === 'teammate-report' && (
-                    <div className={styles.teammateReportEntry}>
-                      <div className={styles.teammateReportHeader}>
-                        {(() => { const _a = getTeammateAvatar(entry.agentName); return <div className={styles.teamAgentAvatar} style={{ background: _a.color }} dangerouslySetInnerHTML={{ __html: _a.svg }} />; })()}
-                        <span className={styles.teammateReportName}>{entry.agentName}</span>
-                        <span className={styles.teammateReportSummary}>{entry.summary}</span>
-                      </div>
-                      <div className={`${styles.teammateReportBody} chat-md`} dangerouslySetInnerHTML={{ __html: renderMarkdown(entry.content) }} />
-                    </div>
-                  )}
-                </div>
-              ))}
-              {entries.length === 0 && <Empty description="No entries" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
-            </div>
-          </div>
-        </div>
-      </Modal>
-    );
-  }
 
   render() {
     const { mainAgentSessions, cliMode, terminalVisible, onToggleTerminal } = this.props;
@@ -2126,42 +1732,9 @@ class ChatView extends React.Component {
       </button>
     ) : null;
 
-    const promptBubbles = cliMode && ptyPromptHistory.length > 0 ? ptyPromptHistory.filter(p => {
-      // active plan approval / dangerous operation prompt 由专用卡片处理，不重复显示
-      if (isPlanApprovalPrompt(p) && p.status === 'active') return false;
-      if (isDangerousOperationPrompt(p) && p.status === 'active') return false;
-      // Last Response 中有对应 AskUserQuestion 卡片时，按问题文本精确去重
-      if (this._lastResponseAskQuestions && this._lastResponseAskQuestions.size > 0
-        && p.status === 'active' && this._lastResponseAskQuestions.has(p.question)) return false;
-      return true;
-    }).map((p, i) => {
-      const isActive = p.status === 'active';
-      const isAnswered = p.status === 'answered';
-      return (
-        <div key={`pty-prompt-${i}`} className={`${styles.ptyPromptBubble}${isActive ? '' : ' ' + styles.ptyPromptResolved}`}>
-          <div className={styles.ptyPromptQuestion}>{p.question}</div>
-          <div className={styles.ptyPromptOptions}>
-            {p.options.map(opt => {
-              const chosen = isAnswered && p.selectedNumber === opt.number;
-              let cls = styles.ptyPromptOption;
-              if (isActive && opt.selected) cls = styles.ptyPromptOptionPrimary;
-              if (chosen) cls = styles.ptyPromptOptionChosen;
-              if (!isActive && !chosen) cls = styles.ptyPromptOptionDimmed;
-              return (
-                <button
-                  key={opt.number}
-                  className={cls}
-                  disabled={!isActive}
-                  onClick={isActive ? () => this.handlePromptOptionClick(opt.number) : undefined}
-                >
-                  {opt.number}. {opt.text}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }) : null;
+    // TODO: PtyPromptBubbles 误检率较高（会将 Claude Code 状态栏、diff 输出等识别为交互提示），
+    // 暂时屏蔽，下一个迭代优化 _detectPrompt() 的检测精度后再启用。
+    const promptBubbles = null;
 
     const loadMoreBtn = isMobile && this._mobileSliceOffset > 0 ? (
       <div className={styles.loadMoreWrap}>
@@ -2172,33 +1745,11 @@ class ChatView extends React.Component {
     ) : null;
 
     const roleFilterBar = this.state.roleFilterOpen && collectedRoles.length > 0 ? (
-      <div className={styles.roleFilterBar}>
-        {collectedRoles.map(r => {
-          const hidden = this.state.roleFilterHidden.has(r.key);
-          return (
-            <button key={r.key}
-              className={hidden ? styles.roleChip : styles.roleChipActive}
-              onClick={() => this.setState(prev => {
-                const next = new Set(prev.roleFilterHidden);
-                hidden ? next.delete(r.key) : next.add(r.key);
-                return { roleFilterHidden: next };
-              })}
-            >
-              {r.avatarImg ? (
-                <img src={r.avatarImg} className={styles.roleAvatarImg} alt={r.name}
-                  onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; const d = e.target.parentNode.querySelector('[data-role-avatar-fallback]'); if (d) d.style.display = ''; }} />
-              ) : null}
-              <div className={styles.roleAvatar}
-                style={{ background: r.color || 'rgba(255,255,255,0.1)', display: r.avatarImg ? 'none' : '' }}
-                data-role-avatar-fallback=""
-                dangerouslySetInnerHTML={{ __html: r.avatarSvg || getSvgAvatar(r.avatarType) }}
-              />
-              <span className={styles.roleName}>{r.name}</span>
-              {!hidden && <span className={styles.roleCheck}>✓</span>}
-            </button>
-          );
-        })}
-      </div>
+      <RoleFilterBar roles={collectedRoles} hiddenRoles={this.state.roleFilterHidden} onToggle={(key) => this.setState(prev => {
+        const next = new Set(prev.roleFilterHidden);
+        next.has(key) ? next.delete(key) : next.add(key);
+        return { roleFilterHidden: next };
+      })} />
     ) : null;
 
     const messageList = (noData || loading) ? (
@@ -2258,13 +1809,13 @@ class ChatView extends React.Component {
                 <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
               </svg>
             </button>
-          {this.renderTeamButton()}
+          <TeamButton requests={this.props.requests} onOpenSession={(session) => this.setState({ teamModalSession: session })} navBtnClass={styles.navBtn} />
           </div>
           <div className={styles.navSidebarContent}>
             {messageList}
           </div>
         </div>
-        {this.renderTeamModal()}
+        <TeamModal session={this.state.teamModalSession} requests={this.props.requests} mainAgentSessions={this.props.mainAgentSessions} collapseToolResults={this.props.collapseToolResults} expandThinking={this.props.expandThinking} userProfile={this.props.userProfile} onViewRequest={this.props.onViewRequest} onClose={() => this.setState({ teamModalSession: null })} />
       </>);
     }
 
@@ -2301,53 +1852,10 @@ class ChatView extends React.Component {
               <path d="M759.53332137 326.35000897c0-48.26899766-39.4506231-87.33284994-87.87432908-86.6366625-46.95397689 0.69618746-85.08957923 39.14120645-85.39899588 86.09518335-0.23206249 40.68828971 27.53808201 74.87882971 65.13220519 84.47074592 10.82958281 2.78474987 18.41029078 12.37666607 18.64235327 23.51566553 0.38677082 21.11768647-3.40358317 44.40128953-17.24997834 63.81718442-22.20064476 31.17372767-62.42480948 42.46743545-97.93037026 52.44612248-22.43270724 6.26568719-38.75443563 7.89012462-53.14230994 9.28249954-20.42149901 2.01120825-39.76003975 3.94506233-63.89453858 17.79145747-5.10537475 2.93945818-10.13339535 6.18833303-14.85199928 9.74662453-4.09977063 3.09416652-9.90133285 0.15470833-9.90133286-4.95066641V302.60228095c0-9.43720788 5.26008307-18.17822829 13.69168683-22.3553531 28.69839444-14.23316598 48.42370599-43.93716454 48.19164353-78.20505872-0.38677082-48.57841433-41.15241468-87.71962076-89.730829-86.01782918C338.80402918 117.57112321 301.59667683 155.70672553 301.59667683 202.58334827c0 34.03583169 19.64795738 63.50776777 48.1916435 77.66357958 8.43160375 4.17712479 13.69168685 12.76343689 13.69168684 22.12329062v419.02750058c0 9.43720788-5.26008307 18.17822829-13.69168684 22.3553531-28.69839444 14.23316598-48.42370599 43.93716454-48.1916435 78.20505872 0.30941665 48.57841433 41.07506052 87.6422666 89.65347484 86.01782918C437.74000359 906.42887679 474.87000179 868.2159203 474.87000179 821.41665173c0-34.03583169-19.64795738-63.50776777-48.1916435-77.66357958-8.43160375-4.17712479-13.69168685-12.76343689-13.69168684-22.12329062v-14.85199926c0-32.48874844 15.39347842-63.27570528 42.00331048-81.91805854 2.39797906-1.70179159 4.95066642-3.32622901 7.50335379-4.79595812 14.92935344-8.58631209 25.91364457-9.66927037 44.09187287-11.4484161 15.62554091-1.54708326 35.04143581-3.48093734 61.65126786-10.90693699 39.06385228-10.98429114 92.51557887-25.91364457 124.84961898-71.39789238 18.56499911-26.06835292 27.38337367-58.01562219 26.37776956-95.14562041-0.15470833-5.33743724-0.54147915-10.67487447-1.08295828-16.16702004-0.85089578-8.27689543 2.70739569-16.24437421 9.12779121-21.50445729 19.57060322-15.78024923 32.02462345-39.99210223 32.02462345-67.14341343zM351.1033411 202.58334827c0-20.49885317 16.63114503-37.12999821 37.1299982-37.1299982s37.12999821 16.63114503 37.12999821 37.1299982-16.63114503 37.12999821-37.12999821 37.1299982-37.12999821-16.63114503-37.1299982-37.1299982z m74.25999641 618.83330346c0 20.49885317-16.63114503 37.12999821-37.12999821 37.1299982s-37.12999821-16.63114503-37.1299982-37.1299982 16.63114503-37.12999821 37.1299982-37.1299982 37.12999821 16.63114503 37.12999821 37.1299982z m247.53332139-457.93664456c-20.49885317 0-37.12999821-16.63114503-37.1299982-37.1299982s16.63114503-37.12999821 37.1299982-37.12999821 37.12999821 16.63114503 37.1299982 37.12999821-16.63114503 37.12999821-37.1299982 37.1299982z"/>
             </svg>
           </button>
-          {this.renderTeamButton()}
+          <TeamButton requests={this.props.requests} onOpenSession={(session) => this.setState({ teamModalSession: session })} navBtnClass={styles.navBtn} />
         </div>
         <div className={styles.innerSplitArea} ref={this.innerSplitRef}>
-          {/* 吸附预览框 */}
-          {this.state.isDragging && this.state.activeSnapLine && (() => {
-            const container = this.innerSplitRef.current;
-            if (!container) return null;
-            const containerWidth = container.getBoundingClientRect().width;
-            const resizerWidth = 5;
-            // 当前终端区域左边缘位置
-            const currentLeft = containerWidth - this.state.terminalWidth - resizerWidth;
-            // 吸附目标左边缘位置
-            const snapLeft = this.state.activeSnapLine.linePosition;
-            const left = Math.min(currentLeft, snapLeft);
-            const width = Math.abs(snapLeft - currentLeft);
-            return (
-              <div
-                className={styles.snapPreview}
-                style={{
-                  left: `${left}px`,
-                  width: `${width}px`
-                }}
-              />
-            );
-          })()}
-          {/* 吸附线：只显示距离当前位置最近的一条 */}
-          {this.state.isDragging && (() => {
-            const container = this.innerSplitRef.current;
-            if (!container) return null;
-            const containerWidth = container.getBoundingClientRect().width;
-            const resizerWidth = 5;
-            const currentLinePos = containerWidth - this.state.terminalWidth - resizerWidth;
-            // 按距离排序，取最近的一条
-            const sorted = [...this.state.snapLines]
-              .map(snap => ({ ...snap, dist: Math.abs(snap.linePosition - currentLinePos) }))
-              .sort((a, b) => a.dist - b.dist);
-            if (sorted.length === 0) return null;
-            const snap = sorted[0];
-            const isActive = this.state.activeSnapLine && this.state.activeSnapLine.cols === snap.cols;
-            return (
-              <div
-                key={snap.cols}
-                className={isActive ? styles.snapLineActive : styles.snapLine}
-                style={{ left: `${snap.linePosition}px` }}
-              />
-            );
-          })()}
+          <SnapLineOverlay isDragging={this.state.isDragging} activeSnapLine={this.state.activeSnapLine} snapLines={this.state.snapLines} terminalWidth={this.state.terminalWidth} containerRef={this.innerSplitRef} />
           {this.state.fileExplorerOpen && (
             <FileExplorer
               refreshTrigger={this.state.fileExplorerRefresh}
@@ -2440,80 +1948,17 @@ class ChatView extends React.Component {
               </div>
             )}
             {messageList}
-            {!terminalVisible && (
-              <div className={styles.chatInputBar}>
-                <div className={styles.chatInputWrapper}>
-                  <div className={styles.chatTextareaWrap}>
-                    <textarea
-                      ref={this._inputRef}
-                      className={styles.chatTextarea}
-                      placeholder={this.state.inputSuggestion ? '' : t('ui.chatInput.placeholder')}
-                      rows={1}
-                      onKeyDown={this.handleInputKeyDown}
-                      onInput={this.handleInputChange}
-                    />
-                    {this.state.inputSuggestion && this.state.inputEmpty && (
-                      <div className={styles.ghostText}>{this.state.inputSuggestion}</div>
-                    )}
-                  </div>
-                  <div className={styles.chatInputHint}>
-                    {this.state.inputSuggestion && this.state.inputEmpty
-                      ? t('ui.chatInput.hintTab')
-                      : t('ui.chatInput.hintEnter')}
-                  </div>
-                </div>
-                {!isMobile && (
-                  <button
-                    className={styles.chatSendBtn}
-                    onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.onchange = async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          const path = await uploadFileAndGetPath(file);
-                          const quoted = `"${path}"`;
-                          const textarea = this._inputRef.current;
-                          if (textarea) {
-                            textarea.value = (textarea.value ? textarea.value + ' ' : '') + quoted;
-                            textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                            this.setState({ inputEmpty: false });
-                          }
-                        } catch (err) {
-                          console.error('[CC Viewer] Upload failed:', err);
-                        }
-                      };
-                      input.click();
-                    }}
-                    title={t('ui.terminal.upload')}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="17 8 12 3 7 8" />
-                      <line x1="12" y1="3" x2="12" y2="15" />
-                    </svg>
-                  </button>
-                )}
-                <button
-                  className={styles.chatSendBtn}
-                  onClick={this.handleInputSend}
-                  disabled={this.state.inputEmpty}
-                  title={t('ui.chatInput.send')}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
-              </div>
-            )}
-            {terminalVisible && this.state.inputSuggestion && (
-              <div className={styles.suggestionChip} onClick={this.handleSuggestionToTerminal}>
-                <span className={styles.suggestionChipText}>{this.state.inputSuggestion}</span>
-                <span className={styles.suggestionChipAction}>↵</span>
-              </div>
-            )}
+            <ChatInputBar
+              inputRef={this._inputRef}
+              inputEmpty={this.state.inputEmpty}
+              inputSuggestion={this.state.inputSuggestion}
+              terminalVisible={terminalVisible}
+              onKeyDown={this.handleInputKeyDown}
+              onChange={this.handleInputChange}
+              onSend={this.handleInputSend}
+              onSuggestionClick={this.handleSuggestionToTerminal}
+              onUploadPath={this.handleUploadPath}
+            />
             </div>
           </div>
           {cliMode && onToggleTerminal && (
@@ -2554,7 +1999,7 @@ class ChatView extends React.Component {
           )}
         </div>
       </div>
-      {this.renderTeamModal()}
+      <TeamModal session={this.state.teamModalSession} requests={this.props.requests} mainAgentSessions={this.props.mainAgentSessions} collapseToolResults={this.props.collapseToolResults} expandThinking={this.props.expandThinking} userProfile={this.props.userProfile} onViewRequest={this.props.onViewRequest} onClose={() => this.setState({ teamModalSession: null })} />
     </>);
   }
 }

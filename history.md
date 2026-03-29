@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.57 (2026-03-29)
+
+- Refactor: split ChatView.jsx (2562 lines) into 5 isolated components — TeamSessionPanel, SnapLineOverlay, PtyPromptBubbles, RoleFilterBar, ChatInputBar — each with its own CSS module
+- Feature: plan approval buttons show "Submitting..." state after click, with proper reset on plan change
+- Fix: PTY prompt false positive filters — skip file paths and Claude Code status-bar output in `_detectPrompt()`
+- Fix: temporarily disable PtyPromptBubbles rendering due to high false-positive rate (TODO: re-enable after improving detection accuracy)
+- Style: inline code color changed to #9597eb for better visibility; table border lightened to #777; table body background darkened to #000
+- Cleanup: remove 3 unused imports from ChatView.jsx (extractToolResultText, parseAskAnswerText, parsePlanApproval)
+
 ## 1.6.55 (2026-03-29)
 
 - Feature: PreToolUse hook bridge for AskUserQuestion — bypass PTY keyboard simulation with structured JSON answers via `lib/ask-bridge.js`

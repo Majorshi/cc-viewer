@@ -41,6 +41,7 @@ class ChatMessage extends React.Component {
       planFeedbackInput: false,
       planFeedbackText: '',
       planFeedbackOptNumber: null,
+      planApprovalSubmitting: false,
     };
   }
 
@@ -53,6 +54,9 @@ class ChatMessage extends React.Component {
         askOtherText: {},
         askSubmitting: false,
       });
+    }
+    if (prevProps.lastPendingPlanId !== this.props.lastPendingPlanId) {
+      this.setState({ planApprovalSubmitting: false });
     }
   }
 
@@ -444,7 +448,9 @@ class ChatMessage extends React.Component {
           )}
           {isInteractive && !this.state.planFeedbackInput && (
             <div className={styles.planApprovalActions}>
-              {planOptions.map((opt, optIdx) => {
+              {this.state.planApprovalSubmitting ? (
+                <button className={styles.planOptionBtn} disabled>{t('ui.askSubmitting')}</button>
+              ) : planOptions.map((opt, optIdx) => {
                 const txt = (opt.text || '').toLowerCase();
                 let btnCls = styles.planOptionBtn;
                 if (/yes|approve|accept|proceed/i.test(txt) || (detectedPrompt == null && optIdx === 0)) btnCls = styles.planApproveBtn;
@@ -455,6 +461,7 @@ class ChatMessage extends React.Component {
                     if (isFeedbackOpt) {
                       this.setState({ planFeedbackInput: true, planFeedbackOptNumber: opt.number, planFeedbackText: '' });
                     } else {
+                      this.setState({ planApprovalSubmitting: true });
                       this.props.onPlanApprovalClick(opt.number);
                     }
                   }}>
