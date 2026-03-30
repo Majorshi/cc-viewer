@@ -46,7 +46,7 @@ import { CONTEXT_WINDOW_FILE, readModelContextSize, buildContextWindowEvent, get
 import { watchLogFile, startWatching, getWatchedFiles, sendEventToClients } from './lib/log-watcher.js';
 import { isMainAgentEntry, extractCachedContent } from './lib/kv-cache-analyzer.js';
 import { listLocalLogs, deleteLogFiles, mergeLogFiles } from './lib/log-management.js';
-import { countLogEntries, streamRawEntriesAsync } from './lib/log-stream.js';
+import { countLogEntries, streamRawEntriesAsync, readPagedEntries } from './lib/log-stream.js';
 
 
 const PREFS_FILE = join(LOG_DIR, 'preferences.json');
@@ -618,6 +618,10 @@ async function handleRequest(req, res) {
     const projectMatch = !projectParam || projectParam === (_projectName || '');
     const useIncremental = !!(sinceParam && ccParam > 0 && projectMatch && !isNaN(new Date(sinceParam).getTime()));
 
+    // 分页参数：移动端首次加载传 limit=200，与 since 互斥
+    const limitParam = parseInt(parsedUrl.searchParams.get('limit'), 10) || 0;
+    const useLimit = !useIncremental && limitParam > 0;
+
     // KV-Cache / context_window 追踪（扫描全量条目，不受 since 过滤影响）
     let latestKvCache = null;
     let latestContextWindow = null;
@@ -631,6 +635,7 @@ async function handleRequest(req, res) {
       res.write(']\n\n');
     }, {
       since: useIncremental ? sinceParam : undefined,
+      limit: useLimit ? limitParam : undefined,
       onScan: (raw) => {
         // 轻量追踪最新 MainAgent 的 KV-Cache 和 context_window（仅 regex 检测）
         if (raw.includes('"mainAgent":true') || raw.includes('"mainAgent": true')) {
@@ -649,14 +654,16 @@ async function handleRequest(req, res) {
           } catch { }
         }
       },
-      onReady: ({ totalCount }) => {
+      onReady: ({ totalCount, hasMore, oldestTs }) => {
         // Pass 1 完成、Pass 2 开始前：发送 load_start
         // 增量模式下不显示 loading 遮罩，非增量模式显示进度
-        if (!useIncremental) {
-          res.write(`event: load_start\ndata: ${JSON.stringify({ total: totalCount, incremental: false })}\n\n`);
-        } else {
-          res.write(`event: load_start\ndata: ${JSON.stringify({ total: totalCount, incremental: true })}\n\n`);
+        const loadStartData = { total: totalCount, incremental: !!useIncremental };
+        // 分页模式下附加 hasMore/oldestTs（增量模式由客户端从缓存自行判断）
+        if (useLimit) {
+          loadStartData.hasMore = !!hasMore;
+          loadStartData.oldestTs = oldestTs || '';
         }
+        res.write(`event: load_start\ndata: ${JSON.stringify(loadStartData)}\n\n`);
       },
     });
 
@@ -714,6 +721,35 @@ async function handleRequest(req, res) {
     });
     res.write(']');
     res.end();
+    return;
+  }
+
+  // 分页历史条目端点：移动端"加载更多"按需拉取
+  if (url === '/api/entries/page' && method === 'GET') {
+    const before = parsedUrl.searchParams.get('before');
+    const limitVal = Math.min(parseInt(parsedUrl.searchParams.get('limit'), 10) || 100, 500);
+    if (!before || isNaN(new Date(before).getTime())) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'missing or invalid "before" parameter' }));
+      return;
+    }
+    try {
+      const result = readPagedEntries(LOG_FILE, { before, limit: limitVal });
+      // entries 是原始 JSON 字符串数组，parse 后返回给客户端
+      const entries = result.entries.map(raw => {
+        try { return JSON.parse(raw); } catch { return null; }
+      }).filter(Boolean);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        entries,
+        hasMore: result.hasMore,
+        oldestTimestamp: result.oldestTimestamp,
+        count: entries.length,
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
     return;
   }
 
@@ -2028,7 +2064,7 @@ function startStreamingStatusTimer() {
       const data = streamingState.active
         ? { ...streamingState, elapsed: Date.now() - streamingState.startTime }
         : { active: false };
-      if (clients.size > 0 && sendEventToClients) sendEventToClients(clients, 'streaming_status', data);
+      if (clients.length > 0 && sendEventToClients) sendEventToClients(clients, 'streaming_status', data);
       _lastStreamingActive = streamingState.active;
     }
   }, 500);

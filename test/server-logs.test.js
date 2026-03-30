@@ -44,7 +44,19 @@ describe('server local logs endpoints', { concurrency: false }, () => {
 
   before(async () => {
     mkdirSync(projectDir, { recursive: true });
-    writeFileSync(join(projectDir, fileName), JSON.stringify({ timestamp: '2026-01-01T12:00:00Z' }) + '\n---\n');
+    // 写入多条条目用于分页测试
+    const entries = [];
+    for (let i = 0; i < 10; i++) {
+      const ts = `2026-01-01T12:${String(i).padStart(2, '0')}:00Z`;
+      entries.push(JSON.stringify({
+        timestamp: ts,
+        url: '/v1/messages',
+        mainAgent: true,
+        body: { model: 'claude-opus-4-6', messages: [{ role: 'user', content: `q${i}` }] },
+        response: { status: 200, body: { content: [{ type: 'text', text: `a${i}` }] } },
+      }));
+    }
+    writeFileSync(join(projectDir, fileName), entries.join('\n---\n') + '\n---\n');
     writeFileSync(join(projectDir, `${projectName}.json`), JSON.stringify({ files: { [fileName]: { summary: { sessionCount: 3 } } } }));
 
     const mod = await import('../server.js');
@@ -106,5 +118,51 @@ describe('server local logs endpoints', { concurrency: false }, () => {
     assert.ok(res.body.includes('event: load_chunk'), 'Should contain load_chunk event');
     assert.ok(res.body.includes('event: load_end'), 'Should contain load_end event');
     assert.ok(res.body.includes('2026-01-01T12:00:00Z'), 'Should contain entry data');
+  });
+
+  // /api/entries/page 分页端点测试
+  it('GET /api/entries/page returns valid JSON structure', async () => {
+    // LOG_FILE 在测试环境可能为空，验证端点结构和参数处理
+    const res = await httpRequest(port, `/api/entries/page?before=2099-01-01T00:00:00Z&limit=5`);
+    assert.equal(res.status, 200);
+    const data = res.json();
+    assert.ok(Array.isArray(data.entries), 'entries should be an array');
+    assert.equal(typeof data.hasMore, 'boolean');
+    assert.equal(typeof data.oldestTimestamp, 'string');
+    assert.equal(typeof data.count, 'number');
+    assert.equal(data.count, data.entries.length, 'count should match entries.length');
+    // entries 如果有内容，应该是已解析的对象
+    for (const entry of data.entries) {
+      assert.equal(typeof entry, 'object', 'Each entry should be a parsed object');
+    }
+  });
+
+  it('GET /api/entries/page returns 400 without before param', async () => {
+    const res = await httpRequest(port, '/api/entries/page?limit=10');
+    assert.equal(res.status, 400);
+    const data = res.json();
+    assert.ok(data.error.includes('before'), 'Error should mention "before" parameter');
+  });
+
+  it('GET /api/entries/page returns 400 with invalid before', async () => {
+    const res = await httpRequest(port, '/api/entries/page?before=not-a-date&limit=10');
+    assert.equal(res.status, 400);
+  });
+
+  it('GET /api/entries/page accepts request without limit (defaults to 100)', async () => {
+    const res = await httpRequest(port, `/api/entries/page?before=2099-01-01T00:00:00Z`);
+    assert.equal(res.status, 200);
+    const data = res.json();
+    assert.ok(Array.isArray(data.entries));
+    assert.equal(typeof data.hasMore, 'boolean');
+  });
+
+  it('GET /api/entries/page with early before returns empty', async () => {
+    const res = await httpRequest(port, `/api/entries/page?before=1970-01-01T00:00:00Z&limit=10`);
+    assert.equal(res.status, 200);
+    const data = res.json();
+    assert.equal(data.entries.length, 0);
+    assert.equal(data.hasMore, false);
+    assert.equal(data.count, 0);
   });
 });

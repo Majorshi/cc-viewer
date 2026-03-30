@@ -226,6 +226,9 @@ class ChatView extends React.Component {
       nextProps.userProfile !== this.props.userProfile ||
       nextProps.pendingUploadPaths !== this.props.pendingUploadPaths ||
       nextProps.isStreaming !== this.props.isStreaming ||
+      nextProps.hasMoreHistory !== this.props.hasMoreHistory ||
+      nextProps.loadingMore !== this.props.loadingMore ||
+      nextProps.loadingSessionId !== this.props.loadingSessionId ||
       nextState !== this.state
     );
   }
@@ -760,6 +763,24 @@ class ChatView extends React.Component {
     const allItems = [];
     const tsItemMap = {};
 
+    // Server-side pagination: "load earlier conversations" button
+    if (this.props.hasMoreHistory || this.props.loadingMore) {
+      allItems.push(
+        <div key="load-more-history" className={styles.loadMoreWrap}>
+          {this.props.loadingMore ? (
+            <div className={styles.loadMoreBtn} style={{ cursor: 'default', opacity: 0.7 }}>
+              <Spin size="small" style={{ marginRight: 8 }} />
+              {t('ui.loadingMoreHistory')}
+            </div>
+          ) : (
+            <button className={styles.loadMoreBtn} onClick={() => this.props.onLoadMoreHistory && this.props.onLoadMoreHistory()}>
+              {t('ui.loadEarlierConversations')}
+            </button>
+          )}
+        </div>
+      );
+    }
+
     let subIdx = 0;
 
     mainAgentSessions.forEach((session, si) => {
@@ -769,6 +790,27 @@ class ChatView extends React.Component {
             <Text className={styles.sessionDividerText}>Session</Text>
           </Divider>
         );
+      }
+
+      // 冷 session 占位符
+      if (session._cold) {
+        const isLoading = this.props.loadingSessionId === session.sessionId;
+        allItems.push(
+          <div key={`cold-session-${si}`} className={styles.loadMoreWrap}>
+            {isLoading ? (
+              <div className={styles.loadMoreBtn} style={{ cursor: 'default', opacity: 0.7 }}>
+                <Spin size="small" style={{ marginRight: 8 }} />
+                {t('ui.loadingMoreHistory')}
+              </div>
+            ) : (
+              <button className={styles.loadMoreBtn}
+                onClick={() => this.props.onLoadSession && this.props.onLoadSession(session.sessionId)}>
+                {t('ui.loadSessionPlaceholder', { count: session.msgCount })}
+              </button>
+            )}
+          </div>
+        );
+        return; // 跳过 renderSessionMessages
       }
 
       const msgs = this.renderSessionMessages(session.messages, `s${si}`, modelInfo, tsToIndex);

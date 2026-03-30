@@ -38,7 +38,6 @@ export function createEntrySlimmer(isMainAgentFn) {
      * @returns {object} entry（原样返回）
      */
     process(entry, entries, currentIdx) {
-      if (entry._deltaFormat) return entry;
       if (!isMainAgentFn(entry)) return entry;
       if (!entry.body || !Array.isArray(entry.body.messages) || entry.body.messages.length === 0) return entry;
 
@@ -194,7 +193,6 @@ export function createIncrementalSlimmer(isMainAgentFn) {
      * @returns {object} entry（原样返回）
      */
     processEntry(entry, requests, currentIdx) {
-      if (entry._deltaFormat) return entry;
       if (!isMainAgentFn(entry)) return entry;
       if (!entry.body?.messages?.length) return entry;
 

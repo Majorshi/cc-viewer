@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { countLogEntries, streamReconstructedEntries, streamRawEntriesAsync } from '../lib/log-stream.js';
+import { countLogEntries, streamReconstructedEntries, streamRawEntriesAsync, readPagedEntries } from '../lib/log-stream.js';
 import { readLogFile } from '../lib/log-watcher.js';
 import { reconstructSegment, reconstructEntries } from '../lib/delta-reconstructor.js';
 
@@ -711,5 +711,275 @@ describe('streamRawEntriesAsync', () => {
     const parsed = JSON.parse(raws[0]);
     assert.ok(!parsed.inProgress, 'Should be the completed version, not inProgress');
     assert.ok(parsed.response, 'Completed entry should have response');
+  });
+
+  it('limit 裁剪：只发送最新 N 条（去重后）', async () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 15; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    // 先获取全量条目数
+    const allRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => allRaws.push(r));
+    const totalDeduped = allRaws.length;
+
+    // 用 limit=5 加载
+    const limitRaws = [];
+    const result = await streamRawEntriesAsync(logFile, (r) => limitRaws.push(r), { limit: 5 });
+
+    assert.ok(limitRaws.length >= 5, `Should send at least limit entries, got ${limitRaws.length}`);
+    assert.ok(limitRaws.length < totalDeduped, `Should send fewer than total (${totalDeduped}), got ${limitRaws.length}`);
+    assert.equal(result.totalCount, totalDeduped, 'totalCount should reflect all deduped entries');
+  });
+
+  it('limit 裁剪：向前扩展到 checkpoint 边界', async () => {
+    writeFileSync(logFile, '');
+    // 写入足够多轮以确保有多个 checkpoint（每 10 条一个）
+    const turns = [];
+    for (let i = 0; i < 25; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    const limitRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => limitRaws.push(r), { limit: 3 });
+
+    // 第一条应该是 checkpoint（_isCheckpoint:true 或无 _deltaFormat）
+    const first = JSON.parse(limitRaws[0]);
+    const isCheckpoint = first._isCheckpoint === true || !first._deltaFormat;
+    assert.ok(isCheckpoint, 'First entry after limit+alignment should be a checkpoint');
+  });
+
+  it('limit onReady 回调包含 hasMore 和 oldestTs', async () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 15; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    let readyInfo = null;
+    await streamRawEntriesAsync(logFile, () => {}, {
+      limit: 5,
+      onReady: (info) => { readyInfo = info; },
+    });
+
+    assert.ok(readyInfo, 'onReady should be called');
+    assert.equal(typeof readyInfo.hasMore, 'boolean');
+    assert.ok(readyInfo.hasMore, 'hasMore should be true when limit < total');
+    assert.equal(typeof readyInfo.oldestTs, 'string');
+    assert.ok(readyInfo.oldestTs.length > 0, 'oldestTs should be non-empty');
+  });
+
+  it('limit >= totalCount 时不裁剪', async () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+      { newMessages: [msg('user', 'q2')] },
+    ]);
+
+    const allRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => allRaws.push(r));
+
+    const limitRaws = [];
+    let readyInfo = null;
+    await streamRawEntriesAsync(logFile, (r) => limitRaws.push(r), {
+      limit: 9999,
+      onReady: (info) => { readyInfo = info; },
+    });
+
+    assert.equal(limitRaws.length, allRaws.length, 'Should send all entries when limit >= total');
+    assert.equal(readyInfo.hasMore, false, 'hasMore should be false when limit >= total');
+  });
+
+  it('limit 与 since 互相独立（limit 裁剪后 since 再过滤）', async () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 15; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    // 获取全量条目
+    const allRaws = [];
+    await streamRawEntriesAsync(logFile, (r) => allRaws.push(r));
+    const allTs = allRaws.map(r => JSON.parse(r).timestamp).filter(Boolean).sort();
+    // since 设为接近末尾的时间戳
+    const since = allTs[allTs.length - 3];
+
+    // limit=5 + since 同时使用
+    const raws = [];
+    await streamRawEntriesAsync(logFile, (r) => raws.push(r), { limit: 5, since });
+
+    // since 过滤应在 limit 裁剪后生效
+    for (const raw of raws) {
+      const parsed = JSON.parse(raw);
+      if (parsed.timestamp) {
+        assert.ok(parsed.timestamp >= since, `Entry ${parsed.timestamp} should be >= since ${since}`);
+      }
+    }
+  });
+});
+
+// ============================================================================
+// readPagedEntries — 分页历史条目（REST 端点用）
+// ============================================================================
+
+describe('readPagedEntries', () => {
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'log-stream-page-'));
+    logFile = join(tmpDir, 'test.jsonl');
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('不存在的文件返回空', () => {
+    const result = readPagedEntries(join(tmpDir, 'nope.jsonl'), { before: '2099-01-01T00:00:00Z', limit: 10 });
+    assert.equal(result.entries.length, 0);
+    assert.equal(result.hasMore, false);
+    assert.equal(result.count, 0);
+  });
+
+  it('空文件返回空', () => {
+    writeFileSync(logFile, '');
+    const result = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 10 });
+    assert.equal(result.entries.length, 0);
+    assert.equal(result.hasMore, false);
+  });
+
+  it('过滤 timestamp < before 的条目', () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 10; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    // 获取全量条目的时间戳
+    const allRaws = [];
+    streamRawEntriesAsync(logFile, (r) => allRaws.push(r)).then(() => {});
+    // 同步方式：用 readPagedEntries 自身的 before 在远未来
+    const allResult = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 9999 });
+
+    // 用中间时间戳作为 before
+    const midTs = JSON.parse(allResult.entries[Math.floor(allResult.entries.length / 2)]).timestamp;
+    const pageResult = readPagedEntries(logFile, { before: midTs, limit: 9999 });
+
+    // 所有返回条目的 timestamp 应 < before
+    for (const raw of pageResult.entries) {
+      const entry = JSON.parse(raw);
+      if (entry.timestamp) {
+        assert.ok(entry.timestamp < midTs, `Entry ${entry.timestamp} should be < before ${midTs}`);
+      }
+    }
+    assert.ok(pageResult.entries.length < allResult.entries.length, 'Should return fewer entries than total');
+  });
+
+  it('limit 限制返回条目数', () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 20; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    const result = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 5 });
+
+    // 可能略多于 5（checkpoint 对齐），但不应等于全量
+    assert.ok(result.entries.length >= 5, `Should return at least limit entries, got ${result.entries.length}`);
+    const allResult = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 9999 });
+    assert.ok(result.entries.length < allResult.entries.length, 'Should return fewer than total');
+  });
+
+  it('checkpoint 对齐：第一条是 checkpoint', () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 25; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    const result = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 3 });
+    assert.ok(result.entries.length > 0, 'Should return some entries');
+
+    // 第一条应该是 checkpoint
+    const first = JSON.parse(result.entries[0]);
+    const isCheckpoint = first._isCheckpoint === true || !first._deltaFormat;
+    assert.ok(isCheckpoint, 'First entry should be a checkpoint after alignment');
+  });
+
+  it('hasMore 正确标记', () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 15; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    // 小 limit → hasMore = true
+    const smallResult = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 3 });
+    assert.ok(smallResult.hasMore, 'hasMore should be true when there are earlier entries');
+
+    // 大 limit → hasMore = false
+    const bigResult = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 9999 });
+    assert.equal(bigResult.hasMore, false, 'hasMore should be false when all entries returned');
+  });
+
+  it('oldestTimestamp 是返回条目中最早的时间戳', () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 10; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`), msg('assistant', `a${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    const result = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 5 });
+    assert.ok(result.oldestTimestamp, 'oldestTimestamp should be set');
+
+    // oldestTimestamp 应等于返回条目中最早的 timestamp
+    const timestamps = result.entries.map(r => JSON.parse(r).timestamp).filter(Boolean).sort();
+    assert.equal(result.oldestTimestamp, timestamps[0], 'oldestTimestamp should match earliest entry');
+  });
+
+  it('entries 是原始 JSON 字符串数组', () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+    ]);
+
+    const result = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 10 });
+    assert.ok(result.entries.length > 0);
+    for (const entry of result.entries) {
+      assert.equal(typeof entry, 'string', 'Each entry should be a raw JSON string');
+      assert.doesNotThrow(() => JSON.parse(entry), 'Each entry should be valid JSON');
+    }
+  });
+
+  it('before 早于所有条目时返回空', () => {
+    writeFileSync(logFile, '');
+    simulateInterceptorWrites(logFile, [
+      { newMessages: [msg('user', 'q1')] },
+    ]);
+
+    const result = readPagedEntries(logFile, { before: '1970-01-01T00:00:00Z', limit: 10 });
+    assert.equal(result.entries.length, 0);
+    assert.equal(result.hasMore, false);
+  });
+
+  it('count 等于 entries.length', () => {
+    writeFileSync(logFile, '');
+    const turns = [];
+    for (let i = 0; i < 10; i++) {
+      turns.push({ newMessages: [msg('user', `q${i}`)] });
+    }
+    simulateInterceptorWrites(logFile, turns);
+
+    const result = readPagedEntries(logFile, { before: '2099-01-01T00:00:00Z', limit: 5 });
+    assert.equal(result.count, result.entries.length, 'count should equal entries.length');
   });
 });

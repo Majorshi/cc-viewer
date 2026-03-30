@@ -2,7 +2,7 @@ const DB_NAME = 'ccv_entryCache';
 const STORE_NAME = 'entries';
 const CACHE_KEY = 'cache';
 const META_KEY = 'ccv_cacheMeta';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 天过期
 
 // 单例 DB 连接，避免每次操作都重新打开
@@ -18,6 +18,12 @@ function getDB() {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains('sessions')) {
+        db.createObjectStore('sessions');
+      }
+      if (!db.objectStoreNames.contains('session_index')) {
+        db.createObjectStore('session_index');
       }
     };
     req.onsuccess = () => {
@@ -129,5 +135,85 @@ export async function clearEntries() {
     });
   } catch {
     // 静默
+  }
+}
+
+// --- Per-session 存储 (P1 hot/cold) ---
+
+export async function saveSessionEntries(projectName, sessionId, entries) {
+  if (!projectName || entries == null) return;
+  try {
+    const db = await getDB();
+    const key = `${projectName}:${sessionId}`;
+    return new Promise((resolve) => {
+      const tx = db.transaction('sessions', 'readwrite');
+      tx.objectStore('sessions').put({ entries, ts: Date.now() }, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // 静默
+  }
+}
+
+export async function loadSessionEntries(projectName, sessionId) {
+  try {
+    const db = await getDB();
+    const key = `${projectName}:${sessionId}`;
+    return new Promise((resolve) => {
+      const tx = db.transaction('sessions', 'readonly');
+      const req = tx.objectStore('sessions').get(key);
+      req.onsuccess = () => {
+        const data = req.result;
+        if (!data || !Array.isArray(data.entries) || data.entries.length === 0) {
+          resolve(null);
+        } else if (data.ts && Date.now() - data.ts > MAX_AGE) {
+          resolve(null);
+        } else {
+          resolve(data.entries);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSessionIndex(projectName, index) {
+  if (!projectName || !Array.isArray(index)) return;
+  try {
+    const db = await getDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('session_index', 'readwrite');
+      tx.objectStore('session_index').put({ index, ts: Date.now() }, projectName);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // 静默
+  }
+}
+
+export async function loadSessionIndex(projectName) {
+  try {
+    const db = await getDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('session_index', 'readonly');
+      const req = tx.objectStore('session_index').get(projectName);
+      req.onsuccess = () => {
+        const data = req.result;
+        if (!data || !Array.isArray(data.index) || data.index.length === 0) {
+          resolve(null);
+        } else if (data.ts && Date.now() - data.ts > MAX_AGE) {
+          resolve(null);
+        } else {
+          resolve(data.index);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
   }
 }

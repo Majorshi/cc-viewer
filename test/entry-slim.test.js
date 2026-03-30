@@ -219,7 +219,7 @@ describe('createIncrementalSlimmer', () => {
     assert.equal(requests[2]._fullEntryIndex, 3);
   });
 
-  it('should not slim entries with _deltaFormat', () => {
+  it('should slim entries with _deltaFormat after reconstruction', () => {
     const slimmer = createIncrementalSlimmer(isMainAgent);
     const requests = [];
 
@@ -232,8 +232,10 @@ describe('createIncrementalSlimmer', () => {
     slimmer.processEntry(eDelta, requests, 1);
     requests.push(eDelta);
 
-    // Entry 0 should not be slimmed (delta entry was skipped)
-    assert.equal(requests[0]._slimmed, undefined);
+    // After reconstruction, delta entries have full messages and should be slimmed
+    assert.equal(requests[0]._slimmed, true);
+    assert.equal(requests[0].body.messages.length, 0);
+    assert.equal(requests[0]._fullEntryIndex, 1);
   });
 });
 

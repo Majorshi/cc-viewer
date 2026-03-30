@@ -8,7 +8,8 @@ import { t, getLang, setLang } from './i18n';
 import { formatTokenCount, filterRelevantRequests, isRelevantRequest, appendCacheLossMap, extractCachedContent } from './utils/helpers';
 import { isMainAgent } from './utils/contentFilter';
 import { apiUrl } from './utils/apiUrl';
-import { saveEntries, loadEntries, clearEntries, getCacheMeta } from './utils/entryCache';
+import { saveEntries, loadEntries, clearEntries, getCacheMeta, saveSessionEntries, loadSessionEntries, saveSessionIndex } from './utils/entryCache';
+import { buildSessionIndex, splitHotCold, mergeSessionIndices, HOT_SESSION_COUNT } from './utils/sessionManager';
 import { reconstructEntries } from '../lib/delta-reconstructor.js';
 import { createEntrySlimmer, createIncrementalSlimmer } from './utils/entry-slim.js';
 import styles from './App.module.css';
@@ -66,8 +67,13 @@ class AppBase extends React.Component {
       pendingUploadPaths: [],
       contextWindow: null,
       isStreaming: false,
+      hasMoreHistory: false,
+      loadingMore: false,
+      sessionIndex: [],
+      loadingSessionId: null,
     };
     this.eventSource = null;
+    this._currentSessionId = null;
     this._autoSelectTimer = null;
     this._chunkedEntries = [];   // 分段加载缓冲
     this._chunkedTotal = 0;
@@ -124,6 +130,8 @@ class AppBase extends React.Component {
     this._lastKvCacheContent = null;
     this._sseSlimmer = null;
 
+    let currentSessionId = null;
+
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
 
@@ -145,7 +153,12 @@ class AppBase extends React.Component {
           (count < prevCount * 0.5 && (prevCount - count) > 4) ||
           (prevUserId && userId && userId !== prevUserId)
         );
-        if (isNewSession) timestamps = [];
+        if (isNewSession) {
+          currentSessionId = timestamp;
+          timestamps = [];
+        } else if (currentSessionId === null) {
+          currentSessionId = timestamp;
+        }
         for (let j = timestamps.length; j < count; j++) timestamps.push(timestamp);
         if (messages.length > 0) {
           for (let j = 0; j < messages.length; j++) messages[j]._timestamp = timestamps[j];
@@ -157,8 +170,11 @@ class AppBase extends React.Component {
           sessions = this.mergeMainAgentSessions(sessions, entry);
         }
       }
+
+      entry._sessionId = currentSessionId;
     }
 
+    this._currentSessionId = currentSessionId;
     return { mainAgentSessions: sessions, filtered };
   }
 
@@ -215,12 +231,33 @@ class AppBase extends React.Component {
           loadEntries(projectName).then(cached => {
             if (cached && this.state.requests.length === 0) {
               const { mainAgentSessions, filtered } = this._processEntries(cached);
-              this.setState({
-                requests: cached,
-                selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
-                mainAgentSessions,
-                fileLoading: false,
-              });
+              // P1: 缓存恢复也做 hot/cold 分层，避免全量数据驻留内存
+              if (mainAgentSessions.length > HOT_SESSION_COUNT) {
+                const sessionIndex = buildSessionIndex(cached, mainAgentSessions);
+                const { hotEntries, allSessions } = splitHotCold(
+                  cached, mainAgentSessions, sessionIndex, HOT_SESSION_COUNT
+                );
+                const hotFiltered = hotEntries.filter(e => isRelevantRequest(e));
+                // 计算 _oldestTs 供"加载更多"使用
+                this._oldestTs = hotEntries.length > 0 ? hotEntries[0].timestamp : null;
+                this.setState({
+                  requests: hotEntries,
+                  selectedIndex: hotFiltered.length > 0 ? hotFiltered.length - 1 : null,
+                  mainAgentSessions: allSessions,
+                  sessionIndex,
+                  hasMoreHistory: !!this._oldestTs,
+                  fileLoading: false,
+                });
+              } else {
+                this._oldestTs = cached.length > 0 ? cached[0].timestamp : null;
+                this.setState({
+                  requests: cached,
+                  selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
+                  mainAgentSessions,
+                  hasMoreHistory: !!this._oldestTs,
+                  fileLoading: false,
+                });
+              }
             }
           });
         }
@@ -260,6 +297,7 @@ class AppBase extends React.Component {
     if (this._loadingCountTimer) cancelAnimationFrame(this._loadingCountTimer);
     if (this._loadingCountRafId) cancelAnimationFrame(this._loadingCountRafId);
     if (this._cacheSaveTimer) clearTimeout(this._cacheSaveTimer);
+    if (this._evictionTimer) clearTimeout(this._evictionTimer);
     if (this._sseTimeoutTimer) clearTimeout(this._sseTimeoutTimer);
     if (this._sseReconnectTimer) clearTimeout(this._sseReconnectTimer);
   }
@@ -284,6 +322,32 @@ class AppBase extends React.Component {
     this._sseReconnectCount = (this._sseReconnectCount || 0) + 1;
     if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
     if (this._flushRafId) { cancelAnimationFrame(this._flushRafId); this._flushRafId = null; }
+
+    // 增量恢复：如果加载中断，保存已收到的 chunked entries 以便重连后增量续传
+    if (this._chunkedEntries && this._chunkedEntries.length > 0 && isMobile) {
+      try {
+        const partial = reconstructEntries([...this._chunkedEntries]);
+        if (Array.isArray(partial) && partial.length > 0) {
+          const { mainAgentSessions } = this._processEntries(partial);
+          // 保持 fileLoading: true，重连后继续加载
+          this.setState({ requests: partial, mainAgentSessions });
+          if (this.state.projectName) {
+            const meta = getCacheMeta();
+            const existingCount = (meta && meta.projectName === this.state.projectName) ? meta.count : 0;
+            if (partial.length >= existingCount) {
+              saveEntries(this.state.projectName, partial);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to save partial entries on reconnect:', e);
+      }
+    }
+    this._chunkedEntries = [];
+    this._chunkedTotal = 0;
+    this._isIncremental = false;
+    if (this._loadingCountRafId) { cancelAnimationFrame(this._loadingCountRafId); this._loadingCountRafId = null; }
+
     this._pendingEntries = [];
     this.setState({ isStreaming: false });
     this._sseSlimmer = null;
@@ -312,6 +376,62 @@ class AppBase extends React.Component {
     this._loadingCountTimer = requestAnimationFrame(step);
   }
 
+  async loadMoreHistory() {
+    if (!this.state.hasMoreHistory || this._loadingMore) return;
+    this._loadingMore = true;
+    this.setState({ loadingMore: true });
+    try {
+      const res = await fetch(apiUrl(`/api/entries/page?before=${encodeURIComponent(this._oldestTs)}&limit=100`));
+      const data = await res.json();
+      if (Array.isArray(data.entries) && data.entries.length > 0) {
+        const reconstructed = reconstructEntries(data.entries);
+        const merged = [...reconstructed, ...this.state.requests];
+        const { mainAgentSessions } = this._processEntries(merged);
+        this._oldestTs = data.oldestTimestamp;
+
+        // P1: 移动端 hot/cold 分层
+        if (isMobile && mainAgentSessions.length > HOT_SESSION_COUNT) {
+          const sessionIndex = buildSessionIndex(merged, mainAgentSessions);
+          const fullIndex = mergeSessionIndices(this.state.sessionIndex, sessionIndex);
+          const { hotEntries, allSessions, coldGroups } = splitHotCold(
+            merged, mainAgentSessions, fullIndex, HOT_SESSION_COUNT
+          );
+          const pn = this.state.projectName;
+          if (pn) {
+            for (const [sid, coldEntries] of coldGroups) {
+              saveSessionEntries(pn, sid, coldEntries);
+            }
+            saveSessionIndex(pn, fullIndex);
+            saveEntries(pn, merged);
+          }
+          this.setState({
+            requests: hotEntries,
+            mainAgentSessions: allSessions,
+            sessionIndex: fullIndex,
+            hasMoreHistory: !!data.hasMore,
+            loadingMore: false,
+          });
+        } else {
+          this.setState({
+            requests: merged,
+            mainAgentSessions,
+            hasMoreHistory: !!data.hasMore,
+            loadingMore: false,
+          });
+          if (isMobile && this.state.projectName) {
+            saveEntries(this.state.projectName, merged);
+          }
+        }
+      } else {
+        this.setState({ hasMoreHistory: false, loadingMore: false });
+      }
+    } catch (e) {
+      console.error('loadMoreHistory failed:', e);
+      this.setState({ loadingMore: false });
+    }
+    this._loadingMore = false;
+  }
+
   initSSE() {
     try {
       // 尝试使用缓存元数据进行增量加载
@@ -324,6 +444,10 @@ class AppBase extends React.Component {
           hasCache = true;
         }
       }
+      // 移动端无缓存时只加载最近 200 条，剩余按需分页
+      if (!hasCache && isMobile) {
+        url = '/events?limit=200';
+      }
       // 只有在无缓存时才显示 loading 遮罩
       if (!hasCache) {
         this.setState({ fileLoading: true, fileLoadingCount: 0 });
@@ -333,6 +457,7 @@ class AppBase extends React.Component {
       this.eventSource.onmessage = (event) => { this._resetSSETimeout(); this.handleEventMessage(event); };
       this.eventSource.onopen = () => { this._resetSSETimeout(); };
       this.eventSource.addEventListener('resume_prompt', (event) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
           // 等待偏好加载完成再判断是否跳过弹窗（避免竞态）
@@ -351,26 +476,32 @@ class AppBase extends React.Component {
         } catch { }
       });
       this.eventSource.addEventListener('resume_resolved', () => {
+        this._resetSSETimeout();
         this.setState({ resumeModalVisible: false, resumeFileName: '', resumeRememberChoice: false });
       });
       this.eventSource.addEventListener('update_completed', (event) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
           this.setState({ updateInfo: { type: 'completed', version: data.version } });
         } catch { }
       });
       this.eventSource.addEventListener('update_major_available', (event) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
           this.setState({ updateInfo: { type: 'major', version: data.version } });
         } catch { }
       });
       this.eventSource.addEventListener('load_start', (event) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
           this._chunkedEntries = [];
           this._chunkedTotal = data.total || 0;
           this._isIncremental = !!data.incremental;
+          this._hasMoreHistory = !!data.hasMore;
+          this._oldestTs = data.oldestTs || null;
           // 增量模式下已有缓存数据在显示，不需要 loading 遮罩
           if (!this._isIncremental) {
             this.setState({ fileLoading: true, fileLoadingCount: 0 });
@@ -378,6 +509,7 @@ class AppBase extends React.Component {
         } catch { }
       });
       this.eventSource.addEventListener('load_chunk', (event) => {
+        this._resetSSETimeout();
         try {
           const chunk = JSON.parse(event.data);
           if (Array.isArray(chunk)) {
@@ -393,6 +525,7 @@ class AppBase extends React.Component {
         } catch { }
       });
       this.eventSource.addEventListener('load_end', () => {
+        this._resetSSETimeout();
         if (this._loadingCountRafId) { cancelAnimationFrame(this._loadingCountRafId); this._loadingCountRafId = null; }
         const delta = this._chunkedEntries;
         this._chunkedEntries = [];
@@ -404,7 +537,7 @@ class AppBase extends React.Component {
         let rawEntries;
         if (isIncremental && isMobile && this.state.requests.length > 0) {
           if (delta.length === 0) {
-            // 无新数据，缓存已是最新，跳过重建
+            // 无新数据，缓存已是最新，跳过重建（保留缓存恢复时已设置的 hasMoreHistory）
             this.setState({ fileLoading: false, fileLoadingCount: 0 });
             return;
           }
@@ -422,21 +555,59 @@ class AppBase extends React.Component {
 
         if (Array.isArray(entries) && entries.length > 0) {
           const { mainAgentSessions, filtered } = this._processEntries(entries);
-          this.setState({
-            requests: entries,
-            selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
-            mainAgentSessions,
-            fileLoading: false,
-            fileLoadingCount: 0,
-          });
-          if (isMobile && this.state.projectName) {
-            saveEntries(this.state.projectName, entries);
+
+          // P1: 移动端 hot/cold 分层
+          if (isMobile && mainAgentSessions.length > HOT_SESSION_COUNT) {
+            const sessionIndex = buildSessionIndex(entries, mainAgentSessions);
+            const fullIndex = isIncremental
+              ? mergeSessionIndices(this.state.sessionIndex, sessionIndex)
+              : sessionIndex;
+            const { hotEntries, allSessions, coldGroups } = splitHotCold(
+              entries, mainAgentSessions, fullIndex, HOT_SESSION_COUNT
+            );
+            // 冷 session entries 异步写入 IndexedDB
+            const pn = this.state.projectName;
+            if (pn) {
+              for (const [sid, coldEntries] of coldGroups) {
+                saveSessionEntries(pn, sid, coldEntries);
+              }
+              saveSessionIndex(pn, fullIndex);
+              // 主缓存保存全量 entries（而非 hotEntries），确保下次缓存恢复时有完整数据
+              saveEntries(pn, entries);
+            }
+            // Fix #4: selectedIndex 基于 hotEntries 而非全量 filtered
+            const hotFiltered = hotEntries.filter(e => isRelevantRequest(e));
+            const newState = {
+              requests: hotEntries,
+              selectedIndex: hotFiltered.length > 0 ? hotFiltered.length - 1 : null,
+              mainAgentSessions: allSessions,
+              sessionIndex: fullIndex,
+              fileLoading: false,
+              fileLoadingCount: 0,
+            };
+            // 增量模式保留缓存恢复时设的 hasMoreHistory；非增量（limit）模式用服务端的值
+            if (!isIncremental) newState.hasMoreHistory = !!this._hasMoreHistory;
+            this.setState(newState);
+          } else {
+            const newState = {
+              requests: entries,
+              selectedIndex: filtered.length > 0 ? filtered.length - 1 : null,
+              mainAgentSessions,
+              fileLoading: false,
+              fileLoadingCount: 0,
+            };
+            if (!isIncremental) newState.hasMoreHistory = !!this._hasMoreHistory;
+            this.setState(newState);
+            if (isMobile && this.state.projectName) {
+              saveEntries(this.state.projectName, entries);
+            }
           }
         } else {
           this.setState({ fileLoading: false, fileLoadingCount: 0 });
         }
       });
       this.eventSource.addEventListener('full_reload', (event) => {
+        this._resetSSETimeout();
         try {
           const entries = JSON.parse(event.data);
           if (Array.isArray(entries)) {
@@ -475,6 +646,7 @@ class AppBase extends React.Component {
       });
       // 工作区模式事件
       this.eventSource.addEventListener('workspace_started', (event) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
           // 取消旧动画，防止旧 full_reload 回调覆盖新数据
@@ -496,6 +668,7 @@ class AppBase extends React.Component {
         } catch {}
       });
       this.eventSource.addEventListener('workspace_stopped', () => {
+        this._resetSSETimeout();
         this._rebuildRequestIndex([]);
         this.setState({
           workspaceMode: true,
@@ -506,12 +679,14 @@ class AppBase extends React.Component {
         });
       });
       this.eventSource.addEventListener('context_window', (event) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
           this.setState({ contextWindow: data });
         } catch { }
       });
       this.eventSource.addEventListener('kv_cache_content', (event) => {
+        this._resetSSETimeout();
         try {
           const cached = JSON.parse(event.data);
           // 防御：忽略无实际内容的 kv_cache_content（避免空数据覆盖有效缓存）
@@ -524,6 +699,7 @@ class AppBase extends React.Component {
       });
       this.eventSource.addEventListener('ping', () => { this._resetSSETimeout(); });
       this.eventSource.addEventListener('streaming_status', (e) => {
+        this._resetSSETimeout();
         try {
           const data = JSON.parse(e.data);
           this.setState({ isStreaming: !!data.active });
@@ -690,6 +866,13 @@ class AppBase extends React.Component {
           const isTransient = prevCount > 4 && messages.length <= 4 && messages.length < prevCount * 0.5;
           if (isTransient) continue;
 
+          // Fix #2: 标记 _sessionId
+          if (isNewSession) {
+            this._currentSessionId = timestamp;
+          } else if (this._currentSessionId === null) {
+            this._currentSessionId = timestamp;
+          }
+
           for (let i = 0; i < messages.length; i++) {
             if (!isNewSession && i < prevCount && prevMessages[i]._timestamp) {
               messages[i]._timestamp = prevMessages[i]._timestamp;
@@ -699,6 +882,9 @@ class AppBase extends React.Component {
           }
           mainAgentSessions = this.mergeMainAgentSessions(mainAgentSessions, entry);
         }
+
+        // 标记 entry 的 _sessionId
+        entry._sessionId = this._currentSessionId;
       }
 
       let selectedIndex = prev.selectedIndex;
@@ -725,11 +911,105 @@ class AppBase extends React.Component {
       if (isMobile && this.state.projectName) {
         if (this._cacheSaveTimer) clearTimeout(this._cacheSaveTimer);
         this._cacheSaveTimer = setTimeout(() => {
-          if (this.state.projectName) saveEntries(this.state.projectName, this.state.requests);
+          // hot/cold 分层激活时跳过 saveEntries（state.requests 只有热数据，
+          // 写入会覆盖 load_end 保存的全量缓存）。冷数据已通过 per-session 存储持久化。
+          if (this.state.projectName && this.state.sessionIndex.length === 0) {
+            saveEntries(this.state.projectName, this.state.requests);
+          }
         }, 5000);
+        // P1: 延迟淘汰冷 session，避免频繁触发
+        if (this.state.mainAgentSessions.length > HOT_SESSION_COUNT + 2) {
+          if (!this._evictionTimer) {
+            this._evictionTimer = setTimeout(() => {
+              this._evictionTimer = null;
+              this._evictColdSessions();
+            }, 10000);
+          }
+        }
       }
     });
   };
+
+  // ─── P1: cold session 加载 / 淘汰 ──────────────────────────
+
+  async loadSession(sessionId) {
+    if (this._loadingSessionId != null) return;
+    this._loadingSessionId = sessionId;
+    this.setState({ loadingSessionId: sessionId });
+
+    try {
+      // 1. 从 IndexedDB 加载
+      let entries = await loadSessionEntries(this.state.projectName, sessionId);
+
+      // 2. fallback: 从 REST API 加载
+      if (!entries || entries.length === 0) {
+        const meta = (this.state.sessionIndex || []).find(s => s.sessionId === sessionId);
+        if (meta && meta.lastTs) {
+          const res = await fetch(apiUrl(`/api/entries/page?before=${encodeURIComponent(meta.lastTs)}&limit=200`));
+          const data = await res.json();
+          entries = data.entries || [];
+        }
+      }
+
+      if (entries && entries.length > 0) {
+        const reconstructed = reconstructEntries(entries);
+        const merged = [...reconstructed, ...this.state.requests];
+        const { mainAgentSessions } = this._processEntries(merged);
+
+        const sessionIndex = buildSessionIndex(merged, mainAgentSessions);
+        const fullIndex = mergeSessionIndices(this.state.sessionIndex, sessionIndex);
+        // Fix #3: pin 加载的 session，防止 splitHotCold 立即淘汰
+        const { hotEntries, allSessions, coldGroups } = splitHotCold(
+          merged, mainAgentSessions, fullIndex, HOT_SESSION_COUNT,
+          new Set([sessionId])
+        );
+        const pn = this.state.projectName;
+        if (pn) {
+          for (const [sid, coldEntries] of coldGroups) {
+            saveSessionEntries(pn, sid, coldEntries);
+          }
+          saveSessionIndex(pn, fullIndex);
+          saveEntries(pn, merged);
+        }
+
+        this.setState({
+          requests: hotEntries,
+          mainAgentSessions: allSessions,
+          sessionIndex: fullIndex,
+          loadingSessionId: null,
+        });
+      } else {
+        this.setState({ loadingSessionId: null });
+      }
+    } catch (e) {
+      console.error('loadSession failed:', e);
+      this.setState({ loadingSessionId: null });
+    }
+    this._loadingSessionId = null;
+  }
+
+  _evictColdSessions() {
+    const { requests, mainAgentSessions, projectName } = this.state;
+    if (!isMobile || mainAgentSessions.length <= HOT_SESSION_COUNT) return;
+
+    const { hotEntries, allSessions, coldGroups } = splitHotCold(
+      requests, mainAgentSessions, this.state.sessionIndex, HOT_SESSION_COUNT
+    );
+    const fullIndex = this.state.sessionIndex;
+    if (projectName) {
+      for (const [sid, coldEntries] of coldGroups) {
+        saveSessionEntries(projectName, sid, coldEntries);
+      }
+      saveSessionIndex(projectName, fullIndex);
+      // 不调 saveEntries：state.requests 可能已是 hotEntries，写入会覆盖全量缓存。
+      // 冷数据已通过 saveSessionEntries 持久化，全量缓存由 load_end 维护。
+    }
+    this.setState({
+      requests: hotEntries,
+      mainAgentSessions: allSessions,
+      sessionIndex: fullIndex,
+    });
+  }
 
   // ─── 数据处理 ───────────────────────────────────────────
 

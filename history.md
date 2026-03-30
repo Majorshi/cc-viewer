@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.6.64 (2026-03-30)
+
+- Feature: mobile SSE pagination — initial load limited to latest 200 entries (checkpoint-aligned), history loaded on-demand in 100-entry batches via `/api/entries/page` REST endpoint
+- Feature: session-level hot/cold memory management — mobile keeps only 8 recent sessions in memory (~5-10MB), older sessions stored per-session in IndexedDB with placeholder UI for on-demand loading
+- Feature: "Load earlier conversations" button at chat top + cold session placeholders with one-click restore
+- Perf: entry-slim now processes delta-format entries after reconstruction (previously skipped, causing ~60-70% redundant memory)
+- Perf: server `streamRawEntriesAsync` supports `limit` parameter with checkpoint boundary alignment
+- Fix: `streaming_status` SSE event never sent due to `clients.size` (Set property) used on Array — changed to `clients.length`
+- Fix: SSE heartbeat timeout protection — all named SSE events now reset the 45s heartbeat timer
+- Fix: SSE reconnect saves partial loaded entries to cache for incremental recovery
+- Fix: mobile cache restore now applies hot/cold splitting (prevents full dataset from loading into memory)
+- Fix: incremental SSE mode preserves `hasMoreHistory` state from cache instead of overwriting
+- i18n: added `loadEarlierConversations`, `loadingMoreHistory`, `allConversationsLoaded`, `loadSessionPlaceholder` for 18 languages
+- Test: added 20 pagination tests (limit, checkpoint alignment, readPagedEntries), 22 session manager tests, 14 SSE heartbeat tests
+
 ## 1.6.63 (2026-03-30)
 
 - Feature: streaming state tracking — real-time SSE broadcast of Claude API streaming status

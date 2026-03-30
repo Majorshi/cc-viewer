@@ -342,6 +342,11 @@ class Mobile extends AppBase {
                     mobileChatVisible={true}
                     fileLoading={this.state.fileLoading}
                     isStreaming={this.state.isStreaming}
+                    hasMoreHistory={this.state.hasMoreHistory}
+                    loadingMore={this.state.loadingMore}
+                    onLoadMoreHistory={() => this.loadMoreHistory()}
+                    loadingSessionId={this.state.loadingSessionId}
+                    onLoadSession={(sid) => this.loadSession(sid)}
                   />
                 </div>
               </ConfigProvider>
@@ -382,6 +387,11 @@ class Mobile extends AppBase {
                   mobileChatVisible={this.state.mobileChatVisible}
                   fileLoading={this.state.fileLoading}
                   isStreaming={this.state.isStreaming}
+                  hasMoreHistory={this.state.hasMoreHistory}
+                  loadingMore={this.state.loadingMore}
+                  onLoadMoreHistory={() => this.loadMoreHistory()}
+                  loadingSessionId={this.state.loadingSessionId}
+                  onLoadSession={(sid) => this.loadSession(sid)}
                 />
               </div>
             </ConfigProvider>
