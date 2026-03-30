@@ -65,7 +65,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.25s ease;
+}
+
+.plusBtnOpen {
+  transform: rotate(45deg);
 }
 
 .plusBtn:hover {
@@ -203,51 +207,64 @@
   flex-shrink: 0;
 }
 
-/* ─── 移动端放大输入区域 ─── */
+/* ─── 移动端放大输入区域 (x1.3) ─── */
 @media (max-width: 768px) {
+  .chatInputBar {
+    padding: 10px 21px 16px;
+  }
+
+  .chatInputWrapper {
+    border-radius: 21px;
+  }
+
   .chatTextarea {
-    min-height: 40px;
-    max-height: 160px;
-    padding: 14px 16px 6px;
-    font-size: 17px;
+    min-height: 52px;
+    max-height: 208px;
+    padding: 18px 21px 8px;
+    font-size: 22px;
   }
 
   .ghostText {
-    padding: 14px 16px 6px;
-    font-size: 17px;
+    padding: 18px 21px 8px;
+    font-size: 22px;
   }
 
   .chatInputBottom {
-    padding: 6px 8px 8px;
-    gap: 6px;
+    padding: 8px 10px 10px;
+    gap: 8px;
   }
 
   .plusBtn {
-    width: 36px;
-    height: 36px;
+    width: 47px;
+    height: 47px;
+  }
+
+  .plusBtn svg {
+    width: 23px;
+    height: 23px;
   }
 
   .plusMenu {
-    bottom: 44px;
+    bottom: 57px;
   }
 
   .plusMenuItem {
-    padding: 10px 14px;
-    font-size: 15px;
+    padding: 13px 18px;
+    font-size: 20px;
   }
 
   .chatInputHint {
-    font-size: 13px;
+    font-size: 17px;
   }
 
   .sendBtn {
-    width: 36px;
-    height: 36px;
+    width: 47px;
+    height: 47px;
   }
 
   .sendBtn svg {
-    width: 18px;
-    height: 18px;
+    width: 23px;
+    height: 23px;
   }
 
 }

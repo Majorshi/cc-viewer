@@ -678,18 +678,21 @@ class ChatMessage extends React.Component {
   }
 
   renderUserTextWithImages(text) {
-    if (!text) return escapeHtml(text);
-    // 匹配 [Image: source: /path/to/file.ext] 或 [Image #N] 后跟的图片路径
-    const imagePattern = /\[Image(?:\s*#\d+)?(?::?\s*source)?:\s*([^\]]+)\]/g;
+    if (!text) return text || '';
+    // 匹配图片路径格式：
+    // 1. [Image: source: /path/to/file.ext] 或 [Image #N]
+    // 2. "引号包裹的 /tmp/cc-viewer-uploads/ 图片路径"（仅限上传目录，避免误伤正常文本）
+    const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
+    const combinedPattern = /\[Image(?:\s*#\d+)?(?::?\s*source)?:\s*([^\]]+)\]|"(\/tmp\/cc-viewer-uploads\/[^"]+?)"/g;
     const parts = [];
     let lastIndex = 0;
     let match;
-    while ((match = imagePattern.exec(text)) !== null) {
-      const filePath = match[1].trim();
-      // 只处理看起来像图片路径的（以常见图片扩展名结尾）
-      if (!/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(filePath)) continue;
+    while ((match = combinedPattern.exec(text)) !== null) {
+      // match[1] = [Image...] 中的路径, match[2] = "引号路径"
+      const filePath = (match[1] || match[2] || '').trim();
+      if (!filePath || !IMAGE_EXTS.test(filePath)) continue;
       if (match.index > lastIndex) {
-        parts.push(<span key={`t-${lastIndex}`} dangerouslySetInnerHTML={{ __html: escapeHtml(text.slice(lastIndex, match.index)) }} />);
+        parts.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex, match.index)}</span>);
       }
       const originalText = match[0];
       parts.push(
@@ -702,9 +705,9 @@ class ChatMessage extends React.Component {
       );
       lastIndex = match.index + match[0].length;
     }
-    if (parts.length === 0) return escapeHtml(text);
+    if (parts.length === 0) return text;
     if (lastIndex < text.length) {
-      parts.push(<span key={`t-${lastIndex}`} dangerouslySetInnerHTML={{ __html: escapeHtml(text.slice(lastIndex)) }} />);
+      parts.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex)}</span>);
     }
     return <>{parts}</>;
   }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.68 (2026-03-30)
+
+- Feature: `+` button rotates to `×` with animation when menu opens (ChatInputBar)
+- Feature: mobile input area scaled x1.3 — textarea, buttons, menu items, fonts all proportionally enlarged
+- Feature: user messages with quoted image paths (`"/tmp/cc-viewer-uploads/..."`) now render as inline images with fallback
+- Fix: user message `&quot;` rendering — removed `escapeHtml` + `dangerouslySetInnerHTML` anti-pattern, replaced with safe React JSX children
+- Fix: `.sendBtn svg` height mismatch in mobile (was 18px, now 23px matching width)
+- Security: `/api/file-raw` path traversal protection — `resolve()` result validated with `startsWith` for both upload and persist directories
+
 ## 1.6.67 (2026-03-30)
 
 - Feature: Last Response hides tool_use blocks (Bash, Read, Edit, etc.) — only text, thinking, and interactive cards (AskUserQuestion / ExitPlanMode) are shown, reducing screen clutter

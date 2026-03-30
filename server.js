@@ -1206,6 +1206,12 @@ async function handleRequest(req, res) {
       let targetFile;
       if (reqPath && reqPath.startsWith(uploadPrefix)) {
         targetFile = resolve(reqPath);
+        // 路径穿越防护：resolve 后必须仍在 upload 目录内
+        if (!targetFile.startsWith(uploadPrefix)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Path traversal denied' }));
+          return;
+        }
         // /tmp 原文件不存在时，回退到持久化副本
         if (!existsSync(targetFile)) {
           const fileName = targetFile.split('/').pop();
@@ -1214,6 +1220,12 @@ async function handleRequest(req, res) {
         }
       } else if (reqPath && reqPath.startsWith(persistPrefix)) {
         targetFile = resolve(reqPath);
+        // 路径穿越防护：resolve 后必须仍在持久化目录内
+        if (!targetFile.startsWith(persistPrefix)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Path traversal denied' }));
+          return;
+        }
       } else {
         targetFile = resolveFilePath(cwd, reqPath, isEditorSession);
       }
