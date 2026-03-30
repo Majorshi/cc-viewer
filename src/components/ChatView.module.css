@@ -218,6 +218,39 @@
   color: #6ab4ff;
 }
 
+.navAvatarImg {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.userPromptNavList {
+  max-height: 400px;
+  overflow-y: auto;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.userPromptNavItem {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #ccc;
+  cursor: pointer;
+  border-bottom: 1px solid #222;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userPromptNavItem:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.userPromptNavItem:last-child {
+  border-bottom: none;
+}
 
 .terminalPanelWrap {
   flex-shrink: 0;

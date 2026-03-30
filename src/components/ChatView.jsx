@@ -1,5 +1,5 @@
 import React from 'react';
-import { Empty, Typography, Divider, Spin } from 'antd';
+import { Empty, Typography, Divider, Spin, Popover } from 'antd';
 import ChatMessage from './ChatMessage';
 import TerminalPanel from './TerminalPanel';
 import FileExplorer from './FileExplorer';
@@ -25,6 +25,7 @@ import { isMobile } from '../env';
 import { t } from '../i18n';
 import { apiUrl } from '../utils/apiUrl';
 import { BUILTIN_PRESETS } from '../utils/builtinPresets';
+import defaultAvatarUrl from '../img/default-avatar.svg';
 import styles from './ChatView.module.css';
 
 const { Text } = Typography;
@@ -1838,6 +1839,85 @@ class ChatView extends React.Component {
     localStorage.setItem('cc-viewer-terminal-width', terminalPx.toString());
   }
 
+  /**
+   * 构建用户 Prompt 导航列表（侧边栏 hover popover 内容）
+   * 基于 _currentVisible（当前可见 items），保证每一项都能精确定位和高亮
+   */
+  _buildUserPromptNav() {
+    const visible = this._currentVisible;
+    if (!visible || visible.length === 0) return null;
+
+    // 缓存：visible 引用未变化时复用上次结果
+    if (this._navCacheVisible === visible && this._navCacheResult) return this._navCacheResult;
+
+    const prompts = [];
+    const seen = new Set();
+
+    for (let i = 0; i < visible.length; i++) {
+      const props = visible[i].props;
+      if (!props || props.role !== 'user') continue;
+      const raw = props.text || '';
+      if (!raw) continue;
+      // 清理图片标记，只保留文字部分用于导航列表显示
+      const text = raw
+        .replace(/\[Image(?:\s*#\d+)?(?::?\s*source)?:\s*[^\]]+\]/gi, '')
+        .replace(/"\/tmp\/cc-viewer-uploads\/[^"]+"/g, '')
+        .trim();
+      if (!text) continue;
+      const key = text.substring(0, 100);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const display = text.length > 80 ? text.substring(0, 80) + '...' : text;
+      // 使用 visible 索引作为定位标识（兼容无 timestamp 的遗留消息）
+      prompts.push({ display, visibleIdx: i, timestamp: props.timestamp || null });
+    }
+
+    if (prompts.length === 0) { this._navCacheVisible = visible; this._navCacheResult = null; return null; }
+
+    const result = (
+      <div className={styles.userPromptNavList}>
+        {prompts.map((p, i) => (
+          <div key={p.visibleIdx} className={styles.userPromptNavItem}
+            onClick={() => this._scrollToUserPrompt(p.visibleIdx, p.timestamp)}>
+            {p.display}
+          </div>
+        ))}
+      </div>
+    );
+    this._navCacheVisible = visible;
+    this._navCacheResult = result;
+    return result;
+  }
+
+  /**
+   * 滚动到指定用户消息，并触发蓝色虚线高亮动画。
+   * @param {number} visibleIdx — visible 数组中的索引（与 containerRef.children 一一对应）
+   * @param {string|null} timestamp — 消息时间戳（用于高亮，遗留消息可能为 null）
+   */
+  _scrollToUserPrompt(visibleIdx, timestamp) {
+    if (visibleIdx == null || visibleIdx < 0) return;
+    // 触发高亮（有 timestamp 时显示蓝色虚线动画）
+    if (timestamp) {
+      this.setState({ highlightTs: timestamp, highlightFading: false }, () => {
+        this._doScrollToVisibleIdx(visibleIdx);
+        this._bindScrollFade();
+      });
+    } else {
+      // 无 timestamp 的遗留消息：仅滚动，不触发高亮
+      this._doScrollToVisibleIdx(visibleIdx);
+    }
+  }
+
+  _doScrollToVisibleIdx(idx) {
+    if (isMobile && this.virtuosoRef.current) {
+      this.virtuosoRef.current.scrollToIndex({ index: idx, align: 'center', behavior: 'smooth' });
+    } else {
+      const el = this.containerRef.current;
+      if (el && el.children[idx]) {
+        el.children[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
 
   render() {
     const { mainAgentSessions, cliMode, terminalVisible, onToggleTerminal } = this.props;
@@ -1921,9 +2001,13 @@ class ChatView extends React.Component {
 
     const targetIdx = this._scrollTargetIdx;
     const { highlightTs, highlightFading } = this.state;
-    const highlightIdx = highlightTs && this._tsItemMap && this._tsItemMap[highlightTs] != null
-      ? this._tsItemMap[highlightTs] : null;
     const visible = filteredItems.slice(0, this.state.roleFilterHidden.size > 0 ? filteredItems.length : visibleCount);
+    // 缓存 visible，供 _buildUserPromptNav / _scrollToUserPrompt 使用
+    this._currentVisible = visible;
+    // H2 fix: highlightIdx 基于 visible 索引（而非 allItems 索引），role filter 时不会偏移
+    const highlightIdx = highlightTs != null
+      ? visible.findIndex(item => item.props?.timestamp === highlightTs)
+      : -1;
 
     const { pendingInput, stickyBottom, ptyPromptHistory } = this.state;
 
@@ -2126,6 +2210,21 @@ class ChatView extends React.Component {
             </svg>
           </button>
           <TeamButton requests={this.props.requests} onOpenSession={(session) => this.setState({ teamModalSession: session })} navBtnClass={styles.navBtn} />
+          <Popover
+            content={this._buildUserPromptNav()}
+            trigger="hover"
+            placement="rightTop"
+            overlayStyle={{ maxWidth: 400 }}
+          >
+            <button className={styles.navBtn} title={t('ui.userPromptNav')}>
+              <img
+                src={this.props.userProfile?.avatar || defaultAvatarUrl}
+                className={styles.navAvatarImg}
+                alt="User"
+                onError={(e) => { e.target.onerror = null; e.target.src = defaultAvatarUrl; }}
+              />
+            </button>
+          </Popover>
         </div>
         <div className={styles.innerSplitArea} ref={this.innerSplitRef}>
           <SnapLineOverlay isDragging={this.state.isDragging} activeSnapLine={this.state.activeSnapLine} snapLines={this.state.snapLines} terminalWidth={this.state.terminalWidth} containerRef={this.innerSplitRef} />

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.69 (2026-03-30)
+
+- Feature: sidebar user prompt navigation — hover user avatar icon to browse all user messages, click to scroll and highlight with blue dashed border animation
+- Feature: navigation list supports legacy messages (no timestamp) from previous log slices
+- Fix: `highlightIdx` now computed from `visible.findIndex()` instead of `_tsItemMap`, fixing highlight offset when role filter is active
+- Fix: image markers (`[Image...]`, quoted upload paths) stripped from navigation list display text
+- Fix: navigation list cached per `visible` reference to avoid re-computation on every render
+
 ## 1.6.68 (2026-03-30)
 
 - Feature: `+` button rotates to `×` with animation when menu opens (ChatInputBar)
