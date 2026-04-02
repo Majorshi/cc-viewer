@@ -115,10 +115,11 @@ body {
 }
 .chat-boxer .chat-md tbody { background: #000; }
 
-/* Logo dropdown menu font size */
-.ant-dropdown .logo-dropdown-menu .ant-dropdown-menu-item,
-.ant-dropdown .logo-dropdown-menu .ant-dropdown-menu-submenu-title {
-  font-size: 12px !important;
+/* Logo dropdown menu style — double class selector for specificity over antd defaults */
+.ant-dropdown .logo-dropdown-menu.logo-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown .logo-dropdown-menu.logo-dropdown-menu .ant-dropdown-menu-submenu-title {
+  font-size: 14px;
+  padding: 8px 12px;
 }
 .ant-tooltip .ant-tooltip-inner {
   background-color: #0d0d0d;

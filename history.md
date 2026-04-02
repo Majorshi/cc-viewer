@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.85 (2026-04-02)
+
+- UI: enlarge hamburger dropdown menu font (14px) and item padding (8px 12px)
+- Refactor: remove !important from dropdown menu CSS, use doubled class selector for specificity
+
 ## 1.6.84 (2026-04-02)
 
 - Fix: deduplicate startup port logs in CLI mode (server.js suppresses when cli.js prints)
