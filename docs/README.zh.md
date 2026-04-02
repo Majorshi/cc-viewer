@@ -30,6 +30,11 @@ ccv --d                # == claude --dangerously-skip-permissions（快捷方式
 ccv --model opus       # == claude --model opus
 ```
 
+作者本人常用的命令是
+```
+ccv -c --d             # == claude --continue --dangerously-skip-permissions
+```
+
 编程模式启动以后，会主动打开web页面。
 
 你可以在web页面里面直接使用claude，同时可以查看完整的请求报文和查看代码变更。
