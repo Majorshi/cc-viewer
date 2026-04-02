@@ -2315,11 +2315,13 @@ export async function startViewer() {
           server = currentServer;
           actualPort = port;
           const url = `${serverProtocol}://127.0.0.1:${port}`;
-          console.error(t('server.started'));
-          console.error(t('server.startedLocal', { protocol: serverProtocol, port }));
-          const _ips = getAllLocalIps();
-          for (const _ip of _ips) {
-            console.error(t('server.startedNetwork', { protocol: serverProtocol, ip: _ip, port, token: ACCESS_TOKEN }));
+          if (!isCliMode) {
+            console.error(t('server.started'));
+            console.error(t('server.startedLocal', { protocol: serverProtocol, port }));
+            const _ips = getAllLocalIps();
+            for (const _ip of _ips) {
+              console.error(t('server.startedNetwork', { protocol: serverProtocol, ip: _ip, port, token: ACCESS_TOKEN }));
+            }
           }
           // v2.0.69 之前的版本会清空控制台，自动打开浏览器确保用户能看到界面
           try {

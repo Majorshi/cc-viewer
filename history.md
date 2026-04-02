@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.84 (2026-04-02)
+
+- Fix: deduplicate startup port logs in CLI mode (server.js suppresses when cli.js prints)
+- Fix: suppress HTTP proxy diagnostic log by default (gated behind CCV_DEBUG)
+
 ## 1.6.83 (2026-04-02)
 
 - Fix: Shift+Enter in xterm terminal now inserts newline instead of submitting
