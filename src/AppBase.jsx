@@ -62,6 +62,7 @@ class AppBase extends React.Component {
       selectedLogs: new Set(),   // Set<file>
       githubStars: null,
       cliMode: false,
+      sdkMode: false,
       workspaceMode: false,
       serverCachedContent: null,
       updateInfo: null,
@@ -318,7 +319,7 @@ class AppBase extends React.Component {
         if (data.workspaceMode) {
           this.setState({ cliMode: true, workspaceMode: true, isWorkspaceServer: true });
         } else if (data.cliMode) {
-          this.setState({ cliMode: true, viewMode: 'chat' });
+          this.setState({ cliMode: true, sdkMode: !!data.sdkMode, viewMode: 'chat' });
         }
       })
       .catch(() => { });

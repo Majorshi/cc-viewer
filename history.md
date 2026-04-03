@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.94 (2026-04-04)
+
+- Feat: Agent SDK integration — new `lib/sdk-adapter.js` and `lib/sdk-manager.js` for running Claude via Agent SDK without PTY
+- Feat: SDK mode plan approval — ExitPlanMode review via WebSocket canUseTool callback
+- Feat: SDK mode AskUserQuestion — structured answer submission through WebSocket
+- Feat: "Allow for session" button in tool approval panel for session-level permission grant
+- Feat: mobile global permission/plan approval overlay (fixed positioning outside transform context)
+- Feat: mobile AskUserQuestion responsive CSS (larger touch targets)
+- Refactor: rename `ensureAskHook` → `ensureHooks`, expand perm-bridge matcher to all tools with legacy cleanup
+- Fix: AskUserQuestion dedup — prevent duplicate rendering between message history and Last Response
+- Fix: hide terminal panel and toggle in SDK mode
+- Dep: add `@anthropic-ai/claude-agent-sdk` as optionalDependencies
+
 ## 1.6.93 (2026-04-03)
 
 - Feat: tool permission approval panel — floating overlay above chat input for Bash/Write/Edit/NotebookEdit approval via PreToolUse hook bridge

@@ -43,7 +43,7 @@ import { uploadPlugins, installPluginFromUrl } from './lib/plugin-manager.js';
 import { getUserProfile } from './lib/user-profile.js';
 import { getGitDiffs } from './lib/git-diff.js';
 import { CONTEXT_WINDOW_FILE, readModelContextSize, buildContextWindowEvent, getContextSizeForModel } from './lib/context-watcher.js';
-import { watchLogFile, startWatching, getWatchedFiles, sendEventToClients } from './lib/log-watcher.js';
+import { watchLogFile, startWatching, getWatchedFiles, sendEventToClients, sendToClients } from './lib/log-watcher.js';
 import { isMainAgentEntry, extractCachedContent } from './lib/kv-cache-analyzer.js';
 import { listLocalLogs, deleteLogFiles, mergeLogFiles } from './lib/log-management.js';
 import { countLogEntries, streamRawEntriesAsync, readPagedEntries } from './lib/log-stream.js';
@@ -60,6 +60,7 @@ try {
   }
 } catch { }
 const isCliMode = process.env.CCV_CLI_MODE === '1';
+const isSdkMode = process.env.CCV_SDK_MODE === '1';
 const isWorkspaceMode = process.env.CCV_WORKSPACE_MODE === '1';
 const _defaultProxyProfiles = { active: 'max', profiles: [{ id: 'max', name: 'Default' }] };
 const _maskApiKey = (k) => k && typeof k === 'string' && k.length > 4 ? '****' + k.slice(-4) : k ? '****' : '';
@@ -1874,7 +1875,7 @@ async function handleRequest(req, res) {
   // CLI 模式检测
   if (url === '/api/cli-mode' && method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ cliMode: isCliMode, workspaceMode: isWorkspaceMode && !_workspaceLaunched }));
+    res.end(JSON.stringify({ cliMode: isCliMode, sdkMode: isSdkMode, workspaceMode: isWorkspaceMode && !_workspaceLaunched }));
     return;
   }
 
@@ -2641,8 +2642,10 @@ async function setupTerminalWebSocket(httpServer) {
               } catch {}
             }
           } else if (msg.type === 'perm-hook-answer') {
-            // Client answered permission approval via hook bridge
-            if (pendingPermHook && msg.id && msg.id === pendingPermHook.id) {
+            // Permission approval — SDK mode (canUseTool) or PTY mode (hook bridge)
+            if (isSdkMode && _sdkResolveApproval) {
+              _sdkResolveApproval(msg.id, msg.allowSession ? { decision: msg.decision || 'allow', allowSession: true } : (msg.decision || 'deny'));
+            } else if (pendingPermHook && msg.id && msg.id === pendingPermHook.id) {
               const { res: hookRes, timer } = pendingPermHook;
               clearTimeout(timer);
               pendingPermHook = null;
@@ -2652,6 +2655,23 @@ async function setupTerminalWebSocket(httpServer) {
                   hookRes.end(JSON.stringify({ decision: msg.decision || 'deny' }));
                 }
               } catch {}
+            }
+          } else if (msg.type === 'sdk-ask-answer') {
+            // AskUserQuestion answer in SDK mode — resolve canUseTool Promise
+            if (_sdkResolveApproval) {
+              _sdkResolveApproval(msg.id, msg.answers);
+            }
+          } else if (msg.type === 'sdk-plan-answer') {
+            // Plan approval in SDK mode
+            if (_sdkResolveApproval) {
+              _sdkResolveApproval(msg.id, { approve: msg.approve !== false, feedback: msg.feedback || '' });
+            }
+          } else if (msg.type === 'sdk-user-message') {
+            // User message in SDK mode — relay to sdk-manager
+            if (_sdkSendUserMessage && msg.text) {
+              _sdkSendUserMessage(msg.text).catch(err => {
+                console.error('[SDK] sendUserMessage error:', err.message);
+              });
             }
           } else if (msg.type === 'resize') {
             // 存储该客户端的尺寸
@@ -2717,6 +2737,8 @@ let _lastStreamingActive = false;
 function startStreamingStatusTimer() {
   if (_streamingStatusTimer) return;
   _streamingStatusTimer = setInterval(() => {
+    // SDK mode uses its own streaming state (pushed directly via setSdkStreamingState)
+    if (isSdkMode) return;
     const changed = streamingState.active !== _lastStreamingActive;
     if (changed || streamingState.active) {
       const data = streamingState.active
@@ -2776,6 +2798,38 @@ async function _doStop() {
   resetStreamingState();
   try { unwatchFile(PROFILE_PATH); } catch {} // 清理 interceptor 的 StatWatcher
 }
+
+// ─── SDK Mode Exports ──────────────────────────────────────────
+
+/** Push a JSONL entry to all SSE clients (for SDK mode). */
+export function pushSdkEntry(entry) {
+  if (sendToClients) sendToClients(clients, entry);
+}
+
+/** Update streaming status (for SDK mode). */
+export function setSdkStreamingState(data) {
+  if (clients.length > 0 && sendEventToClients) {
+    sendEventToClients(clients, 'streaming_status', data);
+  }
+}
+
+/** Broadcast a message to all terminal WS clients (for SDK canUseTool). */
+export function broadcastWsMessage(msg) {
+  if (terminalWss) {
+    const str = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    terminalWss.clients.forEach((c) => {
+      if (c.readyState === 1) try { c.send(str); } catch {}
+    });
+  }
+}
+
+/** Reference to sdk-manager's resolveApproval (set by cli.js after import). */
+let _sdkResolveApproval = null;
+export function setSdkResolveApproval(fn) { _sdkResolveApproval = fn; }
+
+/** Reference to sdk-manager's sendUserMessage (set by cli.js after import). */
+let _sdkSendUserMessage = null;
+export function setSdkSendUserMessage(fn) { _sdkSendUserMessage = fn; }
 
 // Auto-start the viewer after log file init completes
 // 工作区模式下由 cli.js 直接 import server.js 触发启动，跳过 _initPromise 自动启动

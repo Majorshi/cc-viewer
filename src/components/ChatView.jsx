@@ -109,6 +109,7 @@ class ChatView extends React.Component {
       presetItems: [],
       localAskAnswers: {}, // 提交后的本地答案映射，用于 Last Response 立即切换到非交互式
       pendingPermission: null, // { id, toolName, input } — active permission approval request
+      pendingPlanApproval: null, // { id, input } — active ExitPlanMode approval in SDK mode
     };
     this._processedToolIds = new Set();
     this._projectDirCache = null; // 缓存项目目录绝对路径
@@ -266,7 +267,32 @@ class ChatView extends React.Component {
     );
   }
 
-  componentDidUpdate(prevProps) {
+  componentDidUpdate(prevProps, prevState) {
+    // 通知父组件权限审批状态变化（用于移动端全局浮层）
+    if (prevState.pendingPermission !== this.state.pendingPermission && this.props.onPendingPermission) {
+      if (this.state.pendingPermission) {
+        this.props.onPendingPermission({
+          permission: this.state.pendingPermission,
+          handlers: {
+            allow: this.handlePermissionAllow,
+            allowSession: this.props.sdkMode ? this.handlePermissionAllowSession : null,
+            deny: this.handlePermissionDeny,
+          },
+        });
+      } else {
+        this.props.onPendingPermission(null);
+      }
+    }
+    if (prevState.pendingPlanApproval !== this.state.pendingPlanApproval && this.props.onPendingPlanApproval) {
+      if (this.state.pendingPlanApproval) {
+        this.props.onPendingPlanApproval({
+          plan: this.state.pendingPlanApproval,
+          handlers: { approve: this.handlePlanApprove, reject: this.handlePlanReject },
+        });
+      } else {
+        this.props.onPendingPlanApproval(null);
+      }
+    }
     // Streaming border fade-out: when isStreaming goes from true to false, trigger fade
     if (prevProps.isStreaming && !this.props.isStreaming) {
       this.setState({ streamingFading: true });
@@ -364,6 +390,9 @@ class ChatView extends React.Component {
 
   componentWillUnmount() {
     this._unmounted = true;
+    // 清理全局权限通知
+    if (this.props.onPendingPermission) this.props.onPendingPermission(null);
+    if (this.props.onPendingPlanApproval) this.props.onPendingPlanApproval(null);
     if (this._queueTimer) clearTimeout(this._queueTimer);
     if (this._fadeClearTimer) clearTimeout(this._fadeClearTimer);
     if (this._ptyDebounceTimer) clearTimeout(this._ptyDebounceTimer);
@@ -601,6 +630,13 @@ class ChatView extends React.Component {
     let lastPendingPlanId = null;
     // P2: 只允许最后一个 pending 的 AskUserQuestion 卡片交互
     let lastPendingAskId = null;
+    // 收集历史中所有 AskUserQuestion block ID，用于 Last Response 去重
+    const historyAskIds = new Set();
+    // 合并 localAskAnswers 到历史 askAnswerMap，使提交后立即显示已回答
+    const _localAsk = this.state.localAskAnswers || {};
+    const mergedAskAnswerMap = Object.keys(_localAsk).length > 0
+      ? { ...askAnswerMap, ..._localAsk }
+      : askAnswerMap;
     for (const msg of messages) {
       if (msg.role === 'assistant' && Array.isArray(msg.content)) {
         for (const block of msg.content) {
@@ -611,7 +647,8 @@ class ChatView extends React.Component {
             }
           }
           if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
-            const answers = askAnswerMap[block.id];
+            historyAskIds.add(block.id);
+            const answers = mergedAskAnswerMap[block.id];
             if (!answers || Object.keys(answers).length === 0) {
               lastPendingAskId = block.id;
             }
@@ -669,11 +706,11 @@ class ChatView extends React.Component {
       } else if (msg.role === 'assistant') {
         if (Array.isArray(content)) {
           renderedMessages.push(
-            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={content} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={askAnswerMap} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} showFullToolContent={showFullToolContent} showThinkingSummaries={showThinkingSummaries} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} lastPendingPlanId={lastPendingPlanId} lastPendingAskId={lastPendingAskId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} onAskQuestionSubmit={this.handleAskQuestionSubmit} cliMode={this.props.cliMode} onOpenFile={this.handleOpenToolFilePath} {...viewReqProps} />
+            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={content} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={mergedAskAnswerMap} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} showFullToolContent={showFullToolContent} showThinkingSummaries={showThinkingSummaries} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} lastPendingPlanId={lastPendingPlanId} lastPendingAskId={lastPendingAskId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} onAskQuestionSubmit={this.handleAskQuestionSubmit} cliMode={this.props.cliMode} onOpenFile={this.handleOpenToolFilePath} {...viewReqProps} />
           );
         } else if (typeof content === 'string') {
           renderedMessages.push(
-            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={[{ type: 'text', text: content }]} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={askAnswerMap} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} showFullToolContent={showFullToolContent} showThinkingSummaries={showThinkingSummaries} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} lastPendingPlanId={lastPendingPlanId} lastPendingAskId={lastPendingAskId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} onAskQuestionSubmit={this.handleAskQuestionSubmit} cliMode={this.props.cliMode} onOpenFile={this.handleOpenToolFilePath} {...viewReqProps} />
+            <ChatMessage key={`${keyPrefix}-asst-${mi}`} role="assistant" content={[{ type: 'text', text: content }]} toolResultMap={toolResultMap} readContentMap={readContentMap} editSnapshotMap={editSnapshotMap} askAnswerMap={mergedAskAnswerMap} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} timestamp={ts} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} showFullToolContent={showFullToolContent} showThinkingSummaries={showThinkingSummaries} ptyPrompt={this.state.ptyPrompt} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} lastPendingPlanId={lastPendingPlanId} lastPendingAskId={lastPendingAskId} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} onAskQuestionSubmit={this.handleAskQuestionSubmit} cliMode={this.props.cliMode} onOpenFile={this.handleOpenToolFilePath} {...viewReqProps} />
           );
         }
       }
@@ -910,6 +947,17 @@ class ChatView extends React.Component {
           const shouldHide = hasSuggestionMode && !hasInteractiveBlock;
 
           if (!shouldHide) {
+            // 收集历史消息中所有 AskUserQuestion block ID，用于 Last Response 去重
+            const historyAskIds = new Set();
+            for (const msg of session.messages) {
+              if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+                for (const block of msg.content) {
+                  if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+                    historyAskIds.add(block.id);
+                  }
+                }
+              }
+            }
             // Last Response 单独存储，不混入主列表
             if (session.entryTimestamp) tsItemMap[session.entryTimestamp] = allItems.length;
             let respLastPendingAskId = null;
@@ -949,8 +997,9 @@ class ChatView extends React.Component {
               ? this.state.ptyPromptHistory.slice().reverse().find(p => isDangerousOperationPrompt(p) && p.status === 'active') || null
               : null;
             // Last Response 过滤：隐藏 tool_use 块，仅保留交互卡片（AskUserQuestion / ExitPlanMode）
+            // 去重：如果 AskUserQuestion 已在消息历史中渲染，不再在 Last Response 重复显示
             const lrContent = respContent.filter(b =>
-              b.type !== 'tool_use' || b.name === 'AskUserQuestion' || b.name === 'ExitPlanMode'
+              b.type !== 'tool_use' || ((b.name === 'AskUserQuestion' && !historyAskIds.has(b.id)) || b.name === 'ExitPlanMode')
             );
             // 如果过滤后没有可见内容，不显示 Last Response 区域
             const hasVisibleContent = lrContent.some(b => {
@@ -1104,6 +1153,18 @@ class ChatView extends React.Component {
         } else if (msg.type === 'ask-hook-timeout') {
           this._askHookActive = false;
           this._askHookQuestions = null;
+        } else if (msg.type === 'sdk-plan-pending') {
+          // SDK mode: ExitPlanMode — show plan approval UI
+          this.setState({ pendingPlanApproval: { id: msg.id, input: msg.input } });
+        } else if (msg.type === 'sdk-ask-pending') {
+          // SDK mode: AskUserQuestion via canUseTool
+          this._askHookActive = true;
+          this._askHookQuestions = msg.questions;
+          this._sdkAskId = msg.id;
+        } else if (msg.type === 'sdk-ask-timeout') {
+          this._askHookActive = false;
+          this._askHookQuestions = null;
+          this._sdkAskId = null;
         } else if (msg.type === 'perm-hook-pending') {
           this.setState({ pendingPermission: { id: msg.id, toolName: msg.toolName, input: msg.input } });
         } else if (msg.type === 'perm-hook-timeout') {
@@ -1112,8 +1173,13 @@ class ChatView extends React.Component {
       } catch {}
     };
     this._inputWs.onclose = () => {
-      // 清除可能残留的权限审批面板（WS 断连后无法响应）
-      if (this.state.pendingPermission) this.setState({ pendingPermission: null });
+      // 清除可能残留的审批面板（WS 断连后无法响应）
+      if (this.state.pendingPermission || this.state.pendingPlanApproval) {
+        this.setState({ pendingPermission: null, pendingPlanApproval: null });
+      }
+      this._sdkAskId = null;
+      this._askHookActive = false;
+      this._askHookQuestions = null;
       this._wsReconnectTimer = setTimeout(() => {
         if (!this._unmounted && this.splitContainerRef.current && this.props.cliMode) {
           this.connectInputWs();
@@ -1321,12 +1387,36 @@ class ChatView extends React.Component {
     this.setState({ pendingPermission: null });
   };
 
+  handlePermissionAllowSession = (id) => {
+    const ws = this._inputWs;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'allow', allowSession: true }));
+    }
+    this.setState({ pendingPermission: null });
+  };
+
   handlePermissionDeny = (id) => {
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'deny' }));
     }
     this.setState({ pendingPermission: null });
+  };
+
+  handlePlanApprove = (id) => {
+    const ws = this._inputWs;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'sdk-plan-answer', id, approve: true }));
+    }
+    this.setState({ pendingPlanApproval: null });
+  };
+
+  handlePlanReject = (id, feedback) => {
+    const ws = this._inputWs;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'sdk-plan-answer', id, approve: false, feedback: feedback || '' }));
+    }
+    this.setState({ pendingPlanApproval: null });
   };
 
   handlePlanFeedbackSubmit = (number, text) => {
@@ -1423,6 +1513,31 @@ class ChatView extends React.Component {
       this.setState(prev => ({
         localAskAnswers: { ...(prev.localAskAnswers || {}), [askId]: localAnswers },
       }));
+    }
+
+    // SDK 模式：直接通过 WS 发送结构化答案，无需 hook bridge 或 PTY
+    if (this.props.sdkMode) {
+      const ws = this._inputWs;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        // 构造 answers 对象: { questionText: selectedLabel }
+        const sdkAnswers = {};
+        const qs = this._askHookQuestions || questions;
+        for (const answer of answers) {
+          const q = qs?.[answer.questionIndex];
+          if (!q) continue;
+          if (answer.type === 'other') {
+            sdkAnswers[q.question] = answer.text;
+          } else if (answer.type === 'multi') {
+            const labels = answer.selectedIndices.map(i => (q.options || [])[i]?.label).filter(Boolean);
+            sdkAnswers[q.question] = labels.join(', ');
+          } else {
+            sdkAnswers[q.question] = (q.options || [])[answer.optionIndex]?.label || '';
+          }
+        }
+        ws.send(JSON.stringify({ type: 'sdk-ask-answer', id: askId || this._sdkAskId, answers: sdkAnswers }));
+        this._sdkAskId = null;
+      }
+      return;
     }
 
     // Hook bridge path: submit structured JSON instead of PTY simulation
@@ -1696,13 +1811,18 @@ class ChatView extends React.Component {
     const text = textarea.value.trim();
     if (!text) return;
     if (this._inputWs && this._inputWs.readyState === WebSocket.OPEN) {
-      // Claude Code TUI 逐字符处理输入，需要先发文字再单独发回车
-      this._inputWs.send(JSON.stringify({ type: 'input', data: text }));
-      setTimeout(() => {
-        if (this._inputWs && this._inputWs.readyState === WebSocket.OPEN) {
-          this._inputWs.send(JSON.stringify({ type: 'input', data: '\r' }));
-        }
-      }, 50);
+      if (this.props.sdkMode) {
+        // SDK 模式：发送结构化用户消息
+        this._inputWs.send(JSON.stringify({ type: 'sdk-user-message', text }));
+      } else {
+        // PTY 模式：Claude Code TUI 逐字符处理输入，需要先发文字再单独发回车
+        this._inputWs.send(JSON.stringify({ type: 'input', data: text }));
+        setTimeout(() => {
+          if (this._inputWs && this._inputWs.readyState === WebSocket.OPEN) {
+            this._inputWs.send(JSON.stringify({ type: 'input', data: '\r' }));
+          }
+        }, 50);
+      }
       textarea.value = '';
       textarea.style.height = 'auto';
       this.setState({ inputEmpty: true, pendingInput: text, inputSuggestion: null }, () => this.scrollToBottom());
@@ -2430,14 +2550,28 @@ class ChatView extends React.Component {
               </div>
             )}
             {messageList}
-            <ToolApprovalPanel
-              toolName={this.state.pendingPermission?.toolName}
-              toolInput={this.state.pendingPermission?.input}
-              requestId={this.state.pendingPermission?.id}
-              onAllow={this.handlePermissionAllow}
-              onDeny={this.handlePermissionDeny}
-              visible={!!this.state.pendingPermission}
-            />
+            {/* 如果父组件处理全局渲染（移动端），跳过本地渲染 */}
+            {!this.props.onPendingPermission && (
+              <ToolApprovalPanel
+                toolName={this.state.pendingPermission?.toolName}
+                toolInput={this.state.pendingPermission?.input}
+                requestId={this.state.pendingPermission?.id}
+                onAllow={this.handlePermissionAllow}
+                onAllowSession={this.props.sdkMode ? this.handlePermissionAllowSession : null}
+                onDeny={this.handlePermissionDeny}
+                visible={!!this.state.pendingPermission}
+              />
+            )}
+            {!this.props.onPendingPlanApproval && this.state.pendingPlanApproval && (
+              <ToolApprovalPanel
+                toolName="ExitPlanMode"
+                toolInput={this.state.pendingPlanApproval.input}
+                requestId={this.state.pendingPlanApproval.id}
+                onAllow={this.handlePlanApprove}
+                onDeny={(id) => this.handlePlanReject(id, '')}
+                visible={true}
+              />
+            )}
             <ChatInputBar
               inputRef={this._inputRef}
               inputEmpty={this.state.inputEmpty}
@@ -2455,7 +2589,7 @@ class ChatView extends React.Component {
             />
             </div>
           </div>
-          {cliMode && onToggleTerminal && (
+          {cliMode && !this.props.sdkMode && onToggleTerminal && (
             <div
               className={styles.terminalToggle}
               onClick={onToggleTerminal}

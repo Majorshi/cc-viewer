@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { t } from '../i18n';
 import styles from './ToolApprovalPanel.module.css';
 
-function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onDeny, visible }) {
+function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSession, onDeny, visible, global: isGlobal }) {
   const displayText = useMemo(() => {
     if (!toolInput) return '';
     switch (toolName) {
@@ -33,7 +33,7 @@ function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onDeny, vi
   if (!visible) return null;
 
   return (
-    <div className={styles.panel}>
+    <div className={isGlobal ? styles.panelGlobal : styles.panel}>
       <div className={styles.header}>
         <span className={styles.toolName}>{toolName}</span>
         <span className={styles.label}>{t('ui.permission.approvalRequired')}</span>
@@ -46,6 +46,11 @@ function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onDeny, vi
         <button className={styles.denyBtn} onClick={() => onDeny(requestId)}>
           {t('ui.permission.deny')}
         </button>
+        {onAllowSession && (
+          <button className={styles.allowSessionBtn} onClick={() => onAllowSession(requestId)}>
+            {t('ui.permission.allowSession')}
+          </button>
+        )}
         <button className={styles.allowBtn} onClick={() => onAllow(requestId)}>
           {t('ui.permission.allow')}
         </button>

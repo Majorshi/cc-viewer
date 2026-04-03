@@ -4225,6 +4225,14 @@ const i18nData = {
     "ar": "سماح", "no": "Tillat", "pt-BR": "Permitir",
     "th": "อนุญาต", "tr": "İzin ver", "uk": "Дозволити"
   },
+  "ui.permission.allowSession": {
+    "zh": "本次会话允许", "en": "Allow for session", "zh-TW": "本次會話允許",
+    "ko": "세션 동안 허용", "ja": "セッション中は許可", "de": "Für Sitzung erlauben",
+    "es": "Permitir para sesión", "fr": "Autoriser pour la session", "it": "Consenti per sessione",
+    "da": "Tillad for session", "pl": "Zezwól na sesję", "ru": "Разрешить на сессию",
+    "ar": "سماح للجلسة", "no": "Tillat for økt", "pt-BR": "Permitir para sessão",
+    "th": "อนุญาตสำหรับเซสชัน", "tr": "Oturum için izin ver", "uk": "Дозволити для сесії"
+  },
   "ui.permission.deny": {
     "zh": "拒绝", "en": "Deny", "zh-TW": "拒絕",
     "ko": "거부", "ja": "拒否", "de": "Ablehnen",
