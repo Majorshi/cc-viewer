@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.95 (2026-04-04)
+
+- Fix: Last Response rendering vs stick-to-bottom race — lock scroll handler during startRender DOM transition
+- Fix: scrollToBottom uses stickyBottom snapshot to prevent state race during content batch updates
+- Fix: mobile Virtuoso `atBottomStateChange` guarded by scroll lock to prevent stickyBottom flip during Footer rendering
+- Fix: mobile Footer (Last Response) scroll — rAF to scroll past Virtuoso LAST index to actual container bottom
+- Refactor: perm-bridge whitelist inversion — only Bash/Edit/Write/NotebookEdit require approval, all other tools auto-pass
+- Refactor: SDK mode canUseTool applies same APPROVAL_TOOLS filter, read-only tools no longer show approval UI
+- Security: move toolName/toolInput guard before APPROVAL_TOOLS check as defensive measure
+- Test: add 32 perm-bridge unit tests covering APPROVAL_TOOLS filtering, bypass mode, and server approval flow
+
 ## 1.6.94 (2026-04-04)
 
 - Feat: Agent SDK integration — new `lib/sdk-adapter.js` and `lib/sdk-manager.js` for running Claude via Agent SDK without PTY

@@ -417,13 +417,22 @@ class ChatView extends React.Component {
   startRender() {
     if (this._queueTimer) clearTimeout(this._queueTimer);
 
+    // 快照：捕获 startRender 开始时的 stickyBottom，防止 scroll handler 在 DOM 过渡期翻转它
+    const wasSticky = this.state.stickyBottom;
+    // 加锁：阻止 scroll handler 在 DOM commit 过渡期间误翻转 stickyBottom
+    this._stickyScrollLock = true;
+
     const rawItems = this.buildAllItems();
     const lastResponseItems = this._lastResponseItems;
     const allItems = this._applyMobileSlice(rawItems);
     this._prevItemsLen = allItems.length;
 
     this.setState({ allItems, lastResponseItems, visibleCount: allItems.length, loading: false },
-      () => this.scrollToBottom());
+      () => {
+        this.scrollToBottom(wasSticky);
+        // 延迟解锁：等待浏览器完成本次 layout + paint 后再允许 scroll handler 工作
+        requestAnimationFrame(() => { this._stickyScrollLock = false; });
+      });
   }
 
   queueNext(current, total) {
@@ -442,7 +451,9 @@ class ChatView extends React.Component {
     return el.scrollHeight - el.scrollTop - el.clientHeight <= 30;
   }
 
-  scrollToBottom() {
+  scrollToBottom(stickyOverride) {
+    // stickyOverride: startRender 传入的快照值，优先于当前 state（防止竞态翻转）
+    const shouldStick = stickyOverride != null ? stickyOverride : this.state.stickyBottom;
     // 移动端：Virtuoso API
     if (isMobile && this.virtuosoRef.current) {
       if (this._scrollTargetIdx != null) {
@@ -456,8 +467,16 @@ class ChatView extends React.Component {
         if (this.props.onScrollTsDone) this.props.onScrollTsDone();
         return;
       }
-      if (this.state.stickyBottom) {
+      if (shouldStick) {
         this.virtuosoRef.current.scrollToIndex({ index: 'LAST', behavior: 'auto' });
+        // Footer 包含 lastResponseItems，scrollToIndex LAST 只到最后一个 data item，
+        // 需要额外滚动到容器真正底部以显示 Footer 内容
+        if (this.state.lastResponseItems) {
+          requestAnimationFrame(() => {
+            const scroller = this._virtuosoScrollerEl;
+            if (scroller) scroller.scrollTop = scroller.scrollHeight;
+          });
+        }
       }
       return;
     }
@@ -479,7 +498,7 @@ class ChatView extends React.Component {
       if (this.props.onScrollTsDone) this.props.onScrollTsDone();
       return;
     }
-    if (this.state.stickyBottom) {
+    if (shouldStick) {
       const el = this.containerRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     }
@@ -2304,6 +2323,7 @@ class ChatView extends React.Component {
             initialTopMostItemIndex={Math.max(0, visible.length - 1)}
             followOutput={this.state.stickyBottom ? 'smooth' : false}
             atBottomStateChange={(atBottom) => {
+              if (this._stickyScrollLock) return;
               if (atBottom !== this.state.stickyBottom) this.setState({ stickyBottom: atBottom });
             }}
             atBottomThreshold={60}
