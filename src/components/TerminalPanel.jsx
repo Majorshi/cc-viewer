@@ -199,6 +199,18 @@ class TerminalPanel extends React.Component {
         }
         return true; // WS 未连接，不吞按键
       }
+      // Enter: 如果有 pending 文件，先注入路径再发送 Enter
+      // 跳过 alternate screen（vim/less 等交互程序），避免误注入
+      if (e.type === 'keydown' && e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const pending = this.props.pendingImages;
+        const inAlternateScreen = this.terminal?.buffer?.active?.type === 'alternate';
+        if (pending?.length > 0 && !inAlternateScreen && this.ws?.readyState === WebSocket.OPEN) {
+          const paths = pending.map(img => `"${img.path.replace(/"/g, '')}"`).join(' ');
+          this.ws.send(JSON.stringify({ type: 'input', data: paths + ' \r' }));
+          this.props.onClearPendingImages?.();
+          return false;
+        }
+      }
       return true;
     });
 
@@ -433,7 +445,21 @@ class TerminalPanel extends React.Component {
         this._resizeDebounceTimer = null;
         if (this.fitAddon && this.containerRef.current) {
           try {
+            // 保存 scroll 位置，fit() 会重置 viewport 导致 scroll 跳到 0
+            const vp = this.containerRef.current.querySelector('.xterm-viewport');
+            const prevScrollTop = vp?.scrollTop ?? 0;
+            const prevScrollHeight = vp?.scrollHeight ?? 1;
+            const wasAtBottom = vp ? (prevScrollTop + vp.clientHeight >= prevScrollHeight - 5) : true;
             this.fitAddon.fit();
+            // 恢复 scroll 位置（fit 后 scrollHeight 可能变化，按比例换算）
+            if (vp) {
+              if (wasAtBottom) {
+                vp.scrollTop = vp.scrollHeight;
+              } else {
+                const ratio = prevScrollHeight > 0 ? prevScrollTop / prevScrollHeight : 0;
+                vp.scrollTop = ratio * vp.scrollHeight;
+              }
+            }
             this.sendResize();
           } catch {}
         }
@@ -819,9 +845,33 @@ class TerminalPanel extends React.Component {
   };
 
   render() {
+    const { pendingImages, onRemovePendingImage } = this.props;
     return (
       <div className={styles.terminalPanel}>
         <div ref={this.containerRef} className={styles.terminalContainer} />
+        {pendingImages?.length > 0 && (
+          <div className={styles.pendingFileStrip}>
+            {pendingImages.map((img, i) => {
+              const fileName = img.path.split('/').pop() || img.path;
+              const isImage = /\.(png|jpe?g|gif|svg|webp|ico)$/i.test(fileName);
+              return isImage ? (
+                <div key={img.path} className={styles.pendingImageItem}>
+                  <img
+                    src={apiUrl(`/api/file-raw?path=${encodeURIComponent(img.path)}`)}
+                    className={styles.pendingImageThumb}
+                    alt={fileName}
+                  />
+                  <button className={styles.pendingImageRemove} onClick={() => onRemovePendingImage?.(i)}>&times;</button>
+                </div>
+              ) : (
+                <span key={img.path} className={styles.pendingFileTag}>
+                  <span className={styles.pendingFileName}>{fileName}</span>
+                  <button className={styles.pendingFileClose} onClick={() => onRemovePendingImage?.(i)}>&times;</button>
+                </span>
+              );
+            })}
+          </div>
+        )}
         <input type="file" ref={this.fileInputRef} className={styles.hiddenFileInput} onChange={this.handleFileUpload} />
         {!isMobile && (
           <div className={styles.terminalToolbar}>

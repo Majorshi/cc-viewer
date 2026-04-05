@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.103 (2026-04-05)
+
+- Feat: terminal pending file tag strip — uploaded files shown as tags/thumbnails above toolbar, multi-device sync
+- Feat: terminal Enter key auto-injects pending file paths into PTY, skips alternate screen (vim/less)
+- Fix: git restore untracked files — use `git clean -fd` instead of `git checkout` for `??` status files
+- Fix: git status path decoding — handle octal escapes and quoted paths for non-ASCII filenames
+- Fix: terminal scroll position reset — save/restore viewport scroll around `fitAddon.fit()` with proportional ratio
+- Fix: perm-bridge bypass mode hook error — use explicit `allow` + `exit(0)` instead of `exit(1)` fallback
+- Style: DetailPanel remove hardcoded background, JsonViewer background unified to `#111`
+
 ## 1.6.99 (2026-04-05)
 
 - Fix: git commit/push and npm publish force Web UI approval even in `--d` (bypass permissions) mode

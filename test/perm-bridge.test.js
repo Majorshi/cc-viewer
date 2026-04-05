@@ -42,10 +42,12 @@ describe('perm-bridge.js', () => {
     assert.equal(code, 1);
   });
 
-  it('exits 1 when CCV_BYPASS_PERMISSIONS is set', async () => {
+  it('auto-allows when CCV_BYPASS_PERMISSIONS is set', async () => {
     const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' } });
-    const { code } = await runBridge(input, { CCVIEWER_PORT: '9999', CCV_BYPASS_PERMISSIONS: '1' });
-    assert.equal(code, 1);
+    const { code, stdout } = await runBridge(input, { CCVIEWER_PORT: '9999', CCV_BYPASS_PERMISSIONS: '1' });
+    assert.equal(code, 0);
+    const output = JSON.parse(stdout.trim());
+    assert.equal(output.hookSpecificOutput.permissionDecision, 'allow');
   });
 
   it('exits 1 when toolName is missing', async () => {

@@ -1237,10 +1237,7 @@ class ChatView extends React.Component {
           }
         } else if (msg.type === 'image-upload-notify') {
           // 另一个视图/设备上传了图片，同步到本端 pendingImages
-          // 终端上传已直接注入 PTY，不加入 pending 避免其他设备双发
-          if (msg.source !== 'terminal') {
-            this._addPendingImage(msg.path, msg.source);
-          }
+          this._addPendingImage(msg.path, msg.source);
         } else if (msg.type === 'image-remove-notify') {
           // 另一端删除了预览中的文件，同步移除
           if (msg.path) {
@@ -2795,13 +2792,13 @@ class ChatView extends React.Component {
                     fileVersion: (this.state.fileVersion || 0) + 1,
                   });
                 }} onFilePath={(path) => {
-                  const quoted = `"${path}"`;
-                  if (this._inputWs && this._inputWs.readyState === WebSocket.OPEN) {
-                    this._inputWs.send(JSON.stringify({ type: 'input', data: quoted }));
-                  }
-                  // 不加入 pendingImages — 终端上传已直接注入 PTY，不需要在聊天预览条"pending"
-                  // 跨设备同步由 TerminalPanel 的 image-upload-notify WS 消息处理
-                }} />
+                  // 加入 pendingImages，在终端 Enter 时统一注入 PTY
+                  this._addPendingImage(path, 'terminal');
+                }}
+                pendingImages={this.state.pendingImages}
+                onRemovePendingImage={this._removePendingImage}
+                onClearPendingImages={this._clearPendingImages}
+                />
               </div>
             </>
           )}

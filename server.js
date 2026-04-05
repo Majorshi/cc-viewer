@@ -1925,7 +1925,14 @@ async function handleRequest(req, res) {
             return;
           }
         }
-        await execFileAsync('git', ['checkout', '--', filePath], { cwd, timeout: 10000 });
+        // Check if file is untracked
+        const { stdout: statusOut } = await execFileAsync('git', ['status', '--porcelain', '--', filePath], { cwd, encoding: 'utf-8', timeout: 5000 });
+        const isUntracked = statusOut.trim().startsWith('??');
+        if (isUntracked) {
+          await execFileAsync('git', ['clean', '-fd', '--', filePath], { cwd, timeout: 10000 });
+        } else {
+          await execFileAsync('git', ['checkout', '--', filePath], { cwd, timeout: 10000 });
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
       } catch (err) {
@@ -1943,7 +1950,15 @@ async function handleRequest(req, res) {
       const lines = output.split('\n').filter(line => line.trim());
       const changes = lines.map(line => {
         const status = line.substring(0, 2).trim();
-        const file = line.substring(3).trim();
+        let file = line.substring(3).trim();
+        // git status --porcelain quotes paths with non-ASCII chars using octal escapes
+        if (file.startsWith('"') && file.endsWith('"')) {
+          file = file.slice(1, -1)
+            .replace(/\\([0-7]{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+            .replace(/\\t/g, '\t').replace(/\\n/g, '\n')
+            .replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+          file = Buffer.from(file, 'latin1').toString('utf8');
+        }
         return { status, file };
       });
       res.writeHead(200, { 'Content-Type': 'application/json' });
