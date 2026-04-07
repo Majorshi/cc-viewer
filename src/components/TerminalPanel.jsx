@@ -63,8 +63,8 @@ function AgentTeamIcon() {
 }
 
 export async function uploadFileAndGetPath(file) {
-  const MAX_SIZE = 50 * 1024 * 1024; // 50MB
-  if (file.size > MAX_SIZE) throw new Error('File too large (max 50MB)');
+  const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+  if (file.size > MAX_SIZE) throw new Error('File too large (max 100MB)');
   const form = new FormData();
   form.append('file', file);
   const res = await fetch(apiUrl('/api/upload'), { method: 'POST', body: form });

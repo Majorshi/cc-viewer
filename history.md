@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.121 (2026-04-08)
+
+- Feat: upload file size limit raised from 50MB to 100MB (server + client)
+
 ## 1.6.120 (2026-04-08)
 
 - Perf: SSE entry slimmer enabled on all platforms (previously desktop-only) — reduces within-session memory from O(n²) to O(n)

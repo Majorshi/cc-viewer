@@ -271,11 +271,11 @@ async function handleRequest(req, res) {
       res.end(JSON.stringify({ error: 'Missing boundary' }));
       return;
     }
-    const MAX_UPLOAD = 50 * 1024 * 1024; // 50MB
+    const MAX_UPLOAD = 100 * 1024 * 1024; // 100MB
     const contentLength = parseInt(req.headers['content-length'] || '0', 10);
     if (contentLength > MAX_UPLOAD) {
       res.writeHead(413, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'File too large (max 50MB)' }));
+      res.end(JSON.stringify({ error: 'File too large (max 100MB)' }));
       return;
     }
     const boundary = boundaryMatch[1];
