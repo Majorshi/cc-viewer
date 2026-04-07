@@ -38,11 +38,12 @@ mac:
 win:
   target:
     - nsis
-  icon: public/ccv-logo.png
+  icon: build/icon.png
 
 linux:
   target:
     - AppImage
+  icon: build/icon.png
   category: Development
 
 nsis:
