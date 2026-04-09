@@ -1,6 +1,6 @@
 import React from 'react';
 import { Space, Tag, Button, Dropdown, Popover, Modal, Collapse, Drawer, Switch, Radio, Tabs, Spin, Input, Table, Select, message } from 'antd';
-import { MessageOutlined, FileTextOutlined, ImportOutlined, DashboardOutlined, ExportOutlined, DownloadOutlined, SettingOutlined, BarChartOutlined, CodeOutlined, GlobalOutlined, CopyOutlined, ApiOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined, CloudDownloadOutlined, SwapOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { MessageOutlined, FileTextOutlined, ImportOutlined, DashboardOutlined, ExportOutlined, DownloadOutlined, SettingOutlined, BarChartOutlined, CodeOutlined, CopyOutlined, ApiOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined, CloudDownloadOutlined, SwapOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { QRCodeCanvas } from 'qrcode.react';
 import { formatTokenCount, computeTokenStats, computeCacheRebuildStats, computeToolUsageStats, computeSkillUsageStats, getModelMaxTokens, extractCachedContent } from '../utils/helpers';
 import { isSystemText, classifyUserContent, isMainAgent } from '../utils/contentFilter';
@@ -1235,34 +1235,6 @@ class AppHeader extends React.Component {
         label: t('ui.settings'),
         onClick: () => this.setState({ settingsDrawerVisible: true }),
       }] : []),
-      {
-        key: 'language',
-        icon: <GlobalOutlined />,
-        label: t('ui.languageSettings'),
-        children: [{
-          key: 'lang-grid-container',
-          type: 'group',
-          label: (
-            <div className={styles.langGrid}>
-              {LANG_OPTIONS.map(o => (
-                <Button
-                  key={o.value}
-                  size="small"
-                  type={o.value === getLang() ? 'primary' : 'default'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLang(o.value);
-                    if (onLangChange) onLangChange();
-                  }}
-                  className={styles.langBtn}
-                >
-                  {o.label}
-                </Button>
-              ))}
-            </div>
-          ),
-        }],
-      },
     ];
 
     return (
@@ -1621,22 +1593,18 @@ class AppHeader extends React.Component {
             </div>
           </div>
           <div className={styles.settingsGroupBox}>
-            <div className={styles.settingsGroupTitle}>{t('ui.languageSettings')}</div>
-            <div className={styles.langGrid}>
-              {LANG_OPTIONS.map(o => (
-                <Button
-                  key={o.value}
-                  size="small"
-                  type={o.value === getLang() ? 'primary' : 'default'}
-                  onClick={() => {
-                    setLang(o.value);
-                    if (onLangChange) onLangChange();
-                  }}
-                  className={styles.langBtn}
-                >
-                  {o.label}
-                </Button>
-              ))}
+            <div className={styles.settingsItem}>
+              <span className={styles.settingsLabel}>{t('ui.languageSettings')}</span>
+              <Select
+                size="small"
+                value={getLang()}
+                onChange={(value) => {
+                  setLang(value);
+                  if (onLangChange) onLangChange();
+                }}
+                options={LANG_OPTIONS.map(o => ({ label: o.label, value: o.value }))}
+                style={{ width: 140 }}
+              />
             </div>
           </div>
         </Drawer>

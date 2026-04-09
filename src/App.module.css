@@ -29,6 +29,10 @@
   background: var(--bg-base-alt);
 }
 
+:global([data-theme="light"]) .leftPanel {
+  background: rgba(255, 255, 255, 0.5);
+}
+
 .leftPanelHeader {
   padding: 10px 16px;
   border-bottom: 1px solid var(--border-primary);

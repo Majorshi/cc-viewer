@@ -842,21 +842,6 @@
   transform: scaleX(-1);
 }
 
-/* Language grid layout */
-.langGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 8px 4px;
-  min-width: 360px;
-  max-height: none;
-}
-
-/* Language button */
-.langBtn {
-  width: 100%;
-  text-align: center;
-}
 
 /* Country info popover */
 .countryInfoPopover {

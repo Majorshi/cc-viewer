@@ -18,6 +18,17 @@
   to { border-color: var(--border-secondary); box-shadow: 0 0 8px var(--color-primary-bg-light); }
 }
 
+:global([data-theme="light"]) .terminalPanelFocused {
+  border-color: rgba(217, 119, 87, 0.15);
+  box-shadow: none;
+  animation-name: terminalFocusInLight;
+}
+
+@keyframes terminalFocusInLight {
+  from { border-color: transparent; box-shadow: none; }
+  to { border-color: rgba(217, 119, 87, 0.15); box-shadow: none; }
+}
+
 .terminalContainer {
   flex: 1;
   overflow: hidden;
