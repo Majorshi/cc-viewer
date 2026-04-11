@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.141 (2026-04-12)
+
+- Feat: sidebar nav adds user avatar button with hover popover showing all user prompts for quick navigation
+
 ## 1.6.136 (2026-04-10)
 
 - Feat: Ultraplan button in terminal toolbar — wraps user prompt with ultraplan instructions (AutoModel/level-1/level-2/◇level-3) and sends directly via bracket paste mode; supports file upload

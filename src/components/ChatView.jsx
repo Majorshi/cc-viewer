@@ -2756,6 +2756,21 @@ class ChatView extends React.Component {
               </svg>
             </button>
           <TeamButton requests={this.props.requests} onOpenSession={(session) => this.setState({ teamModalSession: session })} navBtnClass={styles.navBtn} />
+          <Popover
+            content={this._buildUserPromptNav()}
+            trigger="hover"
+            placement="rightTop"
+            overlayStyle={{ maxWidth: 400 }}
+          >
+            <button className={styles.navBtn} title={t('ui.userPromptNav')}>
+              <img
+                src={this.props.userProfile?.avatar || defaultAvatarUrl}
+                className={styles.navAvatarImg}
+                alt="User"
+                onError={(e) => { e.target.onerror = null; e.target.src = defaultAvatarUrl; }}
+              />
+            </button>
+          </Popover>
           </div>
           <div className={styles.navSidebarContent}>
             {messageList}
