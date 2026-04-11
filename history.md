@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.136 (2026-04-10)
+
+- Feat: Ultraplan button in terminal toolbar — wraps user prompt with ultraplan instructions (AutoModel/level-1/level-2/◇level-3) and sends directly via bracket paste mode; supports file upload
+
 ## 1.6.134 (2026-04-10)
 
 - Feat: auto-approve default countdown varies by model family (Claude/OpenAI 3s, Gemini/DeepSeek/Qwen 5s, GLM/Kimi/MiniMax 10s, unknown 10s)

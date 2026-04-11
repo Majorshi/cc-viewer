@@ -14,7 +14,7 @@ import { getTeammateAvatar } from '../utils/teammateAvatars';
 import { isSystemText, classifyUserContent, isMainAgent, isTeammate, resolveTeammateNames } from '../utils/contentFilter';
 import { classifyRequest, formatRequestTag, formatTeammateLabel } from '../utils/requestType';
 import { buildChunksForAnswer } from '../utils/ptyChunkBuilder';
-import { isPlanApprovalPrompt, isDangerousOperationPrompt } from '../utils/promptClassifier';
+import { isPlanApprovalPrompt, isDangerousOperationPrompt, parseToolInfoFromBuffer } from '../utils/promptClassifier';
 import { isImageFile, isMutatingCommand } from '../utils/commandValidator';
 import { createEmptyToolState, appendToolResultMap, cachedBuildToolResultMap, getToolResultCache, setToolResultCache } from '../utils/toolResultBuilder';
 import { TeamButton, TeamModal } from './TeamSessionPanel';
@@ -723,7 +723,7 @@ class ChatView extends React.Component {
     const activePlanPrompt = this.props.cliMode
       ? this.state.ptyPromptHistory.slice().reverse().find(p => isPlanApprovalPrompt(p) && p.status === 'active') || null
       : null;
-    const activeDangerousPrompt = this.props.cliMode
+    const activeDangerousPrompt = this.props.cliMode && !(this.state.pendingPermission?.source === 'pty')
       ? this.state.ptyPromptHistory.slice().reverse().find(p => isDangerousOperationPrompt(p) && p.status === 'active') || null
       : null;
 
@@ -783,7 +783,7 @@ class ChatView extends React.Component {
           if (suggestionText && toolResults.length > 0) {
             // AskUserQuestion 的用户回复：跳过渲染（答案已在 assistant 侧问卷卡片上显示）
           } else {
-            const { commands, textBlocks, skillBlocks } = classifyUserContent(content);
+            const { commands, textBlocks, skillBlocks, teammateBlocks } = classifyUserContent(content);
             // 渲染 slash command 作为独立用户输入
             for (let ci = 0; ci < commands.length; ci++) {
               renderedMessages.push(
@@ -803,6 +803,22 @@ class ChatView extends React.Component {
               const isPlan = /Implement the following plan:/i.test(textBlocks[ti].text || '');
               renderedMessages.push(
                 <ChatMessage key={`${keyPrefix}-user-${mi}-${ti}`} role={isPlan ? 'plan-prompt' : 'user'} text={textBlocks[ti].text} timestamp={ts} userProfile={userProfile} modelInfo={modelInfo} {...viewReqProps} />
+              );
+            }
+            // 渲染 teammate-message 块
+            for (let tmi = 0; tmi < teammateBlocks.length; tmi++) {
+              const tm = teammateBlocks[tmi];
+              renderedMessages.push(
+                <ChatMessage
+                  key={`${keyPrefix}-teammate-${mi}-${tmi}`}
+                  role={tm.status ? 'teammate-status' : 'teammate-message'}
+                  text={tm.content}
+                  label={tm.status ? (tm.statusFrom || tm.id) : tm.id}
+                  toolName={tm.status || null}
+                  timestamp={ts}
+                  modelInfo={modelInfo}
+                  {...viewReqProps}
+                />
               );
             }
           }
@@ -1161,7 +1177,7 @@ class ChatView extends React.Component {
             const activePlanPrompt = this.props.cliMode
               ? this.state.ptyPromptHistory.slice().reverse().find(p => isPlanApprovalPrompt(p) && p.status === 'active') || null
               : null;
-            const activeDangerousPrompt = this.props.cliMode
+            const activeDangerousPrompt = this.props.cliMode && !this.state.pendingPermission
               ? this.state.ptyPromptHistory.slice().reverse().find(p => isDangerousOperationPrompt(p) && p.status === 'active') || null
               : null;
             // Last Response 过滤：隐藏 tool_use 块，仅保留交互卡片（AskUserQuestion / ExitPlanMode）
@@ -1416,8 +1432,8 @@ class ChatView extends React.Component {
     let options = null;
 
     // Pattern 1: Numbered options — "Question?\n  ❯ 1. Option A\n    2. Option B"
-    // Allows an optional trailing hint line (e.g. "Enter to confirm · Esc to cancel")
-    const match1 = buf.match(/([^\n]*\?)\s*\n((?:\s*[❯>]?\s*\d+\.\s+[^\n]+\n?){2,})(?:\n[^\d❯>\n][^\n]*)?$/);
+    // Allows trailing blank lines and hint lines (e.g. "\n\nEsc to cancel · Tab to amend")
+    const match1 = buf.match(/([^\n]*\?)\s*\n((?:\s*[❯>]?\s*\d+\.\s+[^\n]+\n?){2,})(?:\n[^\d❯>\n][^\n]*|\n)*$/);
     if (match1) {
       question = match1[1].trim();
       const optionLines = match1[2].match(/\s*([❯>])?\s*(\d+)\.\s+([^\n]+)/g);
@@ -1436,9 +1452,9 @@ class ChatView extends React.Component {
     // Pattern 2: Non-numbered cursor-based options (Ink Select) —
     // "Some prompt text\n  ❯ Allow once\n    Deny"
     // Question line may or may not end with "?"
-    // Allows an optional trailing hint line (e.g. "Enter to confirm · Esc to cancel")
+    // Allows trailing blank lines and hint lines (e.g. "\n\nEsc to cancel · Tab to amend")
     if (!options) {
-      const match2 = buf.match(/([^\n]+)\n((?:\s+[❯>]?\s+[^\n]+\n?){2,})(?:\n[^\s❯>\n][^\n]*)?$/);
+      const match2 = buf.match(/([^\n]+)\n((?:\s+[❯>]?\s+[^\n]+\n?){2,})(?:\n[^\s❯>\n][^\n]*|\n)*$/);
       if (match2) {
         const candidateQ = match2[1].trim();
         const block = match2[2];
@@ -1470,6 +1486,27 @@ class ChatView extends React.Component {
 
       const prev = this.state.ptyPrompt;
       const prompt = { question, options };
+
+      // SubAgent permission prompt: route to ToolApprovalPanel instead of renderDangerApproval
+      // when hooks don't fire (subAgent tool calls bypass PreToolUse hooks)
+      if (isDangerousOperationPrompt(prompt) && !this.state.pendingPermission) {
+        const toolInfo = parseToolInfoFromBuffer(this._ptyBuffer, question, options);
+        const id = `pty_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        this._currentPtyPrompt = prompt;
+        this.setState(state => {
+          const history = state.ptyPromptHistory.slice();
+          // Mark as 'pty-routed' (not 'active') to avoid triggering renderDangerApproval
+          history.push({ ...prompt, status: 'pty-routed', selectedNumber: null, timestamp: new Date().toISOString() });
+          if (history.length > 200) history.splice(0, history.length - 200);
+          return {
+            pendingPermission: { id, toolName: toolInfo.toolName, input: toolInfo.input, source: 'pty', ptyPrompt: prompt },
+            ptyPromptHistory: history,
+          };
+        });
+        this.scrollToBottom();
+        return;
+      }
+
       // 同一问题只更新选项（光标移动），不重复推入历史
       if (prev && prev.question === question) {
         this._currentPtyPrompt = prompt;
@@ -1582,6 +1619,13 @@ class ChatView extends React.Component {
   };
 
   handlePermissionAllow = (id) => {
+    const perm = this.state.pendingPermission;
+    if (perm?.source === 'pty' && perm.ptyPrompt) {
+      const optNum = this._findPtyOptionNumber(perm.ptyPrompt, 'allow');
+      this.handlePromptOptionClick(optNum);
+      this.setState({ pendingPermission: null });
+      return;
+    }
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'allow' }));
@@ -1590,6 +1634,13 @@ class ChatView extends React.Component {
   };
 
   handlePermissionAllowSession = (id) => {
+    const perm = this.state.pendingPermission;
+    if (perm?.source === 'pty' && perm.ptyPrompt) {
+      const optNum = this._findPtyOptionNumber(perm.ptyPrompt, 'allowSession');
+      this.handlePromptOptionClick(optNum);
+      this.setState({ pendingPermission: null });
+      return;
+    }
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'allow', allowSession: true }));
@@ -1598,12 +1649,34 @@ class ChatView extends React.Component {
   };
 
   handlePermissionDeny = (id) => {
+    const perm = this.state.pendingPermission;
+    if (perm?.source === 'pty' && perm.ptyPrompt) {
+      const optNum = this._findPtyOptionNumber(perm.ptyPrompt, 'deny');
+      this.handlePromptOptionClick(optNum);
+      this.setState({ pendingPermission: null });
+      return;
+    }
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'deny' }));
     }
     this.setState({ pendingPermission: null });
   };
+
+  _findPtyOptionNumber(prompt, decision) {
+    const options = prompt?.options || [];
+    if (decision === 'allow') {
+      const opt = options.find(o => /^yes$/i.test(o.text.trim()))
+        || options.find(o => /^yes/i.test(o.text) && !/allow|session|project/i.test(o.text));
+      return opt?.number || 1;
+    }
+    if (decision === 'allowSession') {
+      const opt = options.find(o => /allow.*(?:project|session|during)/i.test(o.text));
+      return opt?.number || 2;
+    }
+    const opt = options.find(o => /^no$/i.test(o.text.trim()) || /^no[^a-z]/i.test(o.text));
+    return opt?.number || options.length;
+  }
 
   handlePlanApprove = (id) => {
     const ws = this._inputWs;
@@ -2868,12 +2941,17 @@ class ChatView extends React.Component {
                 toolInput={this.state.pendingPermission?.input}
                 requestId={this.state.pendingPermission?.id}
                 onAllow={this.handlePermissionAllow}
-                onAllowSession={this.props.sdkMode ? this.handlePermissionAllowSession : null}
+                onAllowSession={
+                  (this.props.sdkMode || (this.state.pendingPermission?.source === 'pty' && this.state.pendingPermission?.ptyPrompt?.options?.length >= 3))
+                    ? this.handlePermissionAllowSession
+                    : null
+                }
                 onDeny={this.handlePermissionDeny}
                 visible={!!this.state.pendingPermission}
                 autoApproveSeconds={this.props.autoApproveSeconds}
                 onAutoApproveChange={this.props.onAutoApproveChange}
                 modelName={this._reqScanCache?.modelName}
+                source={this.state.pendingPermission?.source}
               />
             )}
             {!this.props.onPendingPlanApproval && this.state.pendingPlanApproval && (

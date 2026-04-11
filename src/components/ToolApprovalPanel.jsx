@@ -3,7 +3,9 @@ import { t } from '../i18n';
 import { getAutoApproveDefault } from '../utils/helpers';
 import styles from './ToolApprovalPanel.module.css';
 
-function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSession, onDeny, visible, global: isGlobal, autoApproveSeconds = 0, onAutoApproveChange, modelName }) {
+const DEFAULT_AUTO_SECONDS = 3;
+
+function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSession, onDeny, visible, global: isGlobal, autoApproveSeconds = 0, onAutoApproveChange, modelName, source }) {
   const panelRef = useRef(null);
   const allowRef = useRef(null);
   const prevFocusRef = useRef(null);
@@ -92,14 +94,15 @@ function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSes
     if (!toolInput) return '';
     switch (toolName) {
       case 'Bash':
-        return toolInput.command || '';
+        return toolInput.command || toolInput.description || '';
       case 'Edit':
-        return toolInput.file_path || '';
+        return toolInput.file_path || toolInput.description || '';
       case 'Write':
-        return toolInput.file_path || '';
+        return toolInput.file_path || toolInput.description || '';
       case 'NotebookEdit':
-        return toolInput.notebook_path || '';
+        return toolInput.notebook_path || toolInput.description || '';
       default:
+        if (toolInput.description) return toolInput.description;
         return JSON.stringify(toolInput, null, 2).slice(0, 500);
     }
   }, [toolName, toolInput]);
@@ -134,6 +137,7 @@ function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSes
       </svg>
       <div className={styles.header}>
         <span className={styles.toolName}>{toolName}</span>
+        {source === 'pty' && <span className={styles.subAgentBadge}>{t('ui.subAgentApproval')}</span>}
         <span className={styles.label}>{t('ui.permission.approvalRequired')}</span>
       </div>
       <div className={styles.body}>
