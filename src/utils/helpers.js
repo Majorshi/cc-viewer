@@ -555,6 +555,7 @@ export function extractCachedContent(requests) {
   }
 
   // 提取 messages：找到最后一个带 cache_control 的消息，提取从开始到该位置的所有消息内容
+  // 如果没有 cache_control 标记但有 cache_read（delta 重建/slim 还原后标记丢失），提取全部 messages
   if (Array.isArray(body.messages)) {
     let lastCacheIndex = -1;
     for (let i = body.messages.length - 1; i >= 0; i--) {
@@ -569,6 +570,11 @@ export function extractCachedContent(requests) {
         if (lastCacheIndex >= 0) break;
       }
     }
+    // Fallback: delta 重建 + slim 还原后 cache_control 标记可能丢失，
+    // 但 cache_read > 0 说明 messages 确实被缓存了，提取全部
+    if (lastCacheIndex < 0 && result.cacheReadTokens > 0 && body.messages.length > 0) {
+      lastCacheIndex = body.messages.length - 1;
+    }
     if (lastCacheIndex >= 0) {
       for (let i = 0; i <= lastCacheIndex; i++) {
         const msg = body.messages[i];
@@ -579,6 +585,10 @@ export function extractCachedContent(requests) {
           for (const block of content) {
             if (block.type === 'text' && block.text) {
               result.messages.push(`[${msg.role}] ${block.text}`);
+            } else if (block.type === 'tool_use') {
+              const inputStr = block.input ? JSON.stringify(block.input) : '';
+              const preview = inputStr.length > 200 ? inputStr.substring(0, 200) + '...' : inputStr;
+              result.messages.push(`[${msg.role}] ${block.name}(${preview})`);
             } else if (block.type === 'tool_result') {
               const toolText = extractToolResultText(block);
               if (toolText) {
