@@ -252,10 +252,14 @@ class ChatView extends React.Component {
     if (this.props.cliMode) {
       this.connectInputWs();
     }
-    // 检测项目是否有 git
-    fetch(apiUrl('/api/git-status')).then(r => {
-      if (!r.ok) this.setState({ hasGit: false, gitChangesOpen: false });
-    }).catch(() => this.setState({ hasGit: false, gitChangesOpen: false }));
+    // 检测项目是否有 git（优先多仓库 API，回退旧 API）
+    fetch(apiUrl('/api/git-repos')).then(r => r.ok ? r.json() : Promise.reject()).then(data => {
+      if (!data.repos?.length) this.setState({ hasGit: false, gitChangesOpen: false });
+    }).catch(() => {
+      fetch(apiUrl('/api/git-status')).then(r => {
+        if (!r.ok) this.setState({ hasGit: false, gitChangesOpen: false });
+      }).catch(() => this.setState({ hasGit: false, gitChangesOpen: false }));
+    });
     if (!useVirtuoso) this._bindStickyScroll();
     // 初始化时吸附到 60cols
     if (this.state.needsInitialSnap && this.props.cliMode && this.props.terminalVisible) {
@@ -2904,20 +2908,22 @@ class ChatView extends React.Component {
               style={{ width: this.state.sidebarWidth }}
               refreshTrigger={this.state.gitChangesRefresh}
               onClose={() => this.setState({ gitChangesOpen: false })}
-              onFileClick={(path) => {
-                if (tryOpenWithSystem(path, 'git-changes')) return;
-                this.setState({ currentGitDiff: path, currentFile: null });
+              onFileClick={(repoPath, filePath) => {
+                const resolvedPath = repoPath && repoPath !== '.' ? `${repoPath}/${filePath}` : filePath;
+                if (tryOpenWithSystem(resolvedPath, 'git-changes')) return;
+                this.setState({ currentGitDiff: { repo: repoPath, file: filePath }, currentFile: null });
               }}
-              onOpenFile={(path) => {
-                if (tryOpenWithSystem(path, 'git-changes')) return;
-                const parts = path.split('/');
+              onOpenFile={(repoPath, filePath) => {
+                const resolvedPath = repoPath && repoPath !== '.' ? `${repoPath}/${filePath}` : filePath;
+                if (tryOpenWithSystem(resolvedPath, 'git-changes')) return;
+                const parts = resolvedPath.split('/');
                 const ancestors = [];
                 for (let i = 1; i < parts.length; i++) ancestors.push(parts.slice(0, i).join('/'));
                 this._setFileExplorerOpen(true);
                 this.setState(prev => {
                   const newSet = new Set(prev.fileExplorerExpandedPaths);
                   ancestors.forEach(p => newSet.add(p));
-                  return { currentGitDiff: null, currentFile: path, scrollToLine: null, gitChangesOpen: false, fileExplorerExpandedPaths: newSet };
+                  return { currentGitDiff: null, currentFile: resolvedPath, scrollToLine: null, gitChangesOpen: false, fileExplorerExpandedPaths: newSet };
                 });
               }}
             />
@@ -2930,12 +2936,14 @@ class ChatView extends React.Component {
             {this.state.currentGitDiff && (
               <div className={styles.overlayPanel}>
                 <GitDiffView
-                  filePath={this.state.currentGitDiff}
+                  filePath={this.state.currentGitDiff.file}
+                  repoPath={this.state.currentGitDiff.repo}
                   onClose={() => this.setState({ currentGitDiff: null })}
                   onOpenFile={(path, line) => {
-                    if (tryOpenWithSystem(path, 'git-diff')) return;
-                    // 计算祖先目录路径并展开，确保文件在文件浏览器中可见并滚动定位
-                    const parts = path.split('/');
+                    const repo = this.state.currentGitDiff?.repo;
+                    const resolvedPath = repo && repo !== '.' ? `${repo}/${path}` : path;
+                    if (tryOpenWithSystem(resolvedPath, 'git-diff')) return;
+                    const parts = resolvedPath.split('/');
                     const ancestors = [];
                     for (let i = 1; i < parts.length; i++) {
                       ancestors.push(parts.slice(0, i).join('/'));
@@ -2946,7 +2954,7 @@ class ChatView extends React.Component {
                       ancestors.forEach(p => newSet.add(p));
                       return {
                         currentGitDiff: null,
-                        currentFile: path,
+                        currentFile: resolvedPath,
                         scrollToLine: line || 1,
                         gitChangesOpen: false,
                         fileExplorerExpandedPaths: newSet,

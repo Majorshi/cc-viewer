@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.155 (2026-04-14)
+
+- Feat: multi-repo git support — scan project root + first-level subdirs for git repos
+- Feat: `/api/git-repos` endpoint discovers all git repos with `resolveRepoCwd` security validation
+- Feat: git changes list shows collapsible repo sections (name + change count badge)
+- Feat: single-repo projects retain original flat layout (backward compatible)
+- Feat: iPad drag-drop routes to terminal or dialog based on active panel
+- Fix: GitDiffView image preview and header display use repo-resolved paths
+- Fix: git detection falls back to `/api/git-status` for older servers
+- Refactor: extract `fetchAllRepos()` to shared `src/utils/gitApi.js`
+
 ## 1.6.154 (2026-04-14)
 
 - Feat: iPad drag-and-drop file upload support (mirrors desktop pattern)

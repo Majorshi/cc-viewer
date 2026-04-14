@@ -36,10 +36,14 @@ class Mobile extends AppBase {
 
   componentDidMount() {
     super.componentDidMount();
-    // 检测项目是否有 git
-    fetch(apiUrl('/api/git-status')).then(r => {
-      if (!r.ok) this.setState({ hasGit: false, mobileGitDiffVisible: false });
-    }).catch(() => this.setState({ hasGit: false, mobileGitDiffVisible: false }));
+    // 检测项目是否有 git（优先多仓库 API，回退旧 API）
+    fetch(apiUrl('/api/git-repos')).then(r => r.ok ? r.json() : Promise.reject()).then(data => {
+      if (!data.repos?.length) this.setState({ hasGit: false, mobileGitDiffVisible: false });
+    }).catch(() => {
+      fetch(apiUrl('/api/git-status')).then(r => {
+        if (!r.ok) this.setState({ hasGit: false, mobileGitDiffVisible: false });
+      }).catch(() => this.setState({ hasGit: false, mobileGitDiffVisible: false }));
+    });
     // iOS 虚拟键盘弹出时，Safari 会滚动整个文档将页面上推，
     // 导致导航栏消失在视口之外。通过 visualViewport 的 resize + scroll
     // 事件同步可见区域的高度和偏移，用 fixed 定位将布局锁定在可见区域内。
@@ -236,16 +240,22 @@ class Mobile extends AppBase {
     this.setState({ isDragging: false });
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
+    const toTerminal = this.state.mobileTerminalVisible;
     Promise.all(
       files.map(file =>
         uploadFileAndGetPath(file).then(path => ({ name: file.name, path }))
           .catch(err => { message.error(`${file.name}: ${err.message}`); return null; })
       )
     ).then(results => {
-      const paths = results.filter(Boolean).map(r => `"${r.path}"`);
-      if (paths.length > 0) {
+      const uploaded = results.filter(Boolean);
+      if (!uploaded.length) return;
+      if (toTerminal) {
         this.setState(prev => ({
-          pendingUploadPaths: [...(prev.pendingUploadPaths || []), ...paths],
+          terminalPendingImages: [...prev.terminalPendingImages, ...uploaded.map(r => ({ path: r.path, source: 'drop' }))],
+        }));
+      } else {
+        this.setState(prev => ({
+          pendingUploadPaths: [...(prev.pendingUploadPaths || []), ...uploaded.map(r => `"${r.path}"`)],
         }));
       }
     });

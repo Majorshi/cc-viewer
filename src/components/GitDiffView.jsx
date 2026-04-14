@@ -15,7 +15,7 @@ function getFirstChangedLine(oldStr, newStr) {
   return 1;
 }
 
-export default function GitDiffView({ filePath, onClose, onOpenFile }) {
+export default function GitDiffView({ filePath, repoPath, onClose, onOpenFile }) {
   const [diffData, setDiffData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +42,8 @@ export default function GitDiffView({ filePath, onClose, onOpenFile }) {
     setError(null);
     setLightboxOpen(false);
 
-    fetch(apiUrl(`/api/git-diff?files=${encodeURIComponent(filePath)}`))
+    const repoParam = repoPath && repoPath !== '.' ? `&repo=${encodeURIComponent(repoPath)}` : '';
+    fetch(apiUrl(`/api/git-diff?files=${encodeURIComponent(filePath)}${repoParam}`))
       .then(r => {
         if (!r.ok) {
           return r.json().then(err => {
@@ -71,7 +72,9 @@ export default function GitDiffView({ filePath, onClose, onOpenFile }) {
       });
 
     return () => { mounted.current = false; };
-  }, [filePath]);
+  }, [filePath, repoPath]);
+
+  const resolvedPath = repoPath && repoPath !== '.' ? `${repoPath}/${filePath}` : filePath;
 
   return (
     <div ref={containerRef} className={`${styles.gitDiffView}${closing ? ` ${styles.closing}` : ''}`}>
@@ -98,7 +101,7 @@ export default function GitDiffView({ filePath, onClose, onOpenFile }) {
                 onOpenFile(filePath, line);
               }
             }}
-          >{filePath}</span>
+          >{resolvedPath}</span>
           <span className={styles.diffBadge}>DIFF</span>
         </div>
         <div className={styles.headerRight}>
@@ -125,14 +128,14 @@ export default function GitDiffView({ filePath, onClose, onOpenFile }) {
               <div className={styles.imagePreviewWrap}>
                 <img
                   className={styles.imagePreview}
-                  src={apiUrl(`/api/file-raw?path=${encodeURIComponent(filePath)}`)}
-                  alt={filePath}
+                  src={apiUrl(`/api/file-raw?path=${encodeURIComponent(resolvedPath)}`)}
+                  alt={resolvedPath}
                   onClick={() => setLightboxOpen(true)}
                 />
                 {lightboxOpen && (
                   <ImageLightbox
-                    src={apiUrl(`/api/file-raw?path=${encodeURIComponent(filePath)}`)}
-                    alt={filePath}
+                    src={apiUrl(`/api/file-raw?path=${encodeURIComponent(resolvedPath)}`)}
+                    alt={resolvedPath}
                     onClose={() => setLightboxOpen(false)}
                   />
                 )}

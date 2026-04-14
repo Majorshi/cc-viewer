@@ -93,6 +93,20 @@ const IGNORED_PATTERNS = new Set([
   '.idea', '.vscode'
 ]);
 
+// 多 git 仓库支持：解析 repo 参数为安全的 cwd 路径
+function resolveRepoCwd(repoParam) {
+  const projectDir = process.env.CCV_PROJECT_DIR || process.cwd();
+  if (!repoParam || repoParam === '.') return projectDir;
+  if (repoParam.includes('/') || repoParam.includes('..') || repoParam.includes('\\')) return null;
+  const candidate = join(projectDir, repoParam);
+  try {
+    if (!existsSync(candidate) || !statSync(candidate).isDirectory()) return null;
+    if (!existsSync(join(candidate, '.git'))) return null;
+    if (!isPathContained(candidate, projectDir)) return null;
+  } catch { return null; }
+  return candidate;
+}
+
 // 工作区模式：保存 Claude 额外参数，供 launch API 使用
 let _workspaceClaudeArgs = [];
 let _workspaceClaudePath = null;
@@ -2116,6 +2130,33 @@ async function handleRequest(req, res) {
   }
 
   // Git 状态
+  // 扫描项目根目录及一级子目录的 git 仓库
+  if (url === '/api/git-repos' && method === 'GET') {
+    try {
+      const projectDir = process.env.CCV_PROJECT_DIR || process.cwd();
+      const repos = [];
+      if (existsSync(join(projectDir, '.git'))) {
+        repos.push({ name: basename(projectDir), path: '.', isRoot: true });
+      }
+      const entries = readdirSync(projectDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        try {
+          if (existsSync(join(projectDir, entry.name, '.git'))) {
+            repos.push({ name: entry.name, path: entry.name, isRoot: false });
+          }
+        } catch {}
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ repos }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message, repos: [] }));
+    }
+    return;
+  }
+
   // 撤销单个文件的 git 变更
   if (url === '/api/git-restore' && method === 'POST') {
     let body = '';
@@ -2128,7 +2169,7 @@ async function handleRequest(req, res) {
         return;
       }
       try {
-        const { path: filePath } = parsed;
+        const { path: filePath, repo: repoParam } = parsed;
         if (!filePath) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Missing path' }));
@@ -2139,7 +2180,12 @@ async function handleRequest(req, res) {
           res.end(JSON.stringify({ error: 'Invalid path' }));
           return;
         }
-        const cwd = process.env.CCV_PROJECT_DIR || process.cwd();
+        const cwd = resolveRepoCwd(repoParam);
+        if (!cwd) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid repo parameter' }));
+          return;
+        }
         const fullPath = join(cwd, filePath);
         if (existsSync(fullPath)) {
           const realFull = realpathSync(fullPath);
@@ -2170,7 +2216,13 @@ async function handleRequest(req, res) {
 
   if (url === '/api/git-status' && method === 'GET') {
     try {
-      const cwd = process.env.CCV_PROJECT_DIR || process.cwd();
+      const repoParam = parsedUrl.searchParams.get('repo');
+      const cwd = resolveRepoCwd(repoParam);
+      if (!cwd) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid repo parameter', changes: [] }));
+        return;
+      }
       const { stdout: output } = await execFileAsync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8', timeout: 5000 });
       const lines = output.split('\n').filter(line => line.trim());
       const changes = lines.map(line => {
@@ -2198,7 +2250,13 @@ async function handleRequest(req, res) {
   // Git diff 数据获取
   if (url.startsWith('/api/git-diff') && method === 'GET') {
     try {
-      const cwd = process.env.CCV_PROJECT_DIR || process.cwd();
+      const repoParam = parsedUrl.searchParams.get('repo');
+      const cwd = resolveRepoCwd(repoParam);
+      if (!cwd) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid repo parameter', diffs: [] }));
+        return;
+      }
       const filesParam = parsedUrl.searchParams.get('files');
 
       if (!filesParam) {
