@@ -98,7 +98,9 @@ class ChatView extends React.Component {
       ptyPrompt: null,
       ptyPromptHistory: [],
       inputSuggestion: null,
-      fileExplorerOpen: (!isMobile || isPad) && localStorage.getItem('ccv_fileExplorerOpen') !== 'false',
+      fileExplorerOpen: !isMobile
+        ? localStorage.getItem('ccv_fileExplorerOpen') !== 'false'
+        : (isPad ? localStorage.getItem('ccv_fileExplorerOpen') === 'true' : false),
       currentFile: null,
       currentGitDiff: null,
       scrollToLine: null,

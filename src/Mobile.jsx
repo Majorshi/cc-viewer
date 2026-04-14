@@ -1,11 +1,11 @@
 import React from 'react';
-import { ConfigProvider, Spin, Button, Badge, Switch, Select } from 'antd';
-import { BranchesOutlined, DownloadOutlined, DeleteOutlined, RollbackOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ConfigProvider, Spin, Button, Badge, Switch, Select, message } from 'antd';
+import { BranchesOutlined, DownloadOutlined, DeleteOutlined, RollbackOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import AppBase, { styles } from './AppBase';
 import { isIOS, isPad } from './env';
 import { isMainAgent, isSystemText, classifyUserContent } from './utils/contentFilter';
 import ChatView from './components/ChatView';
-import TerminalPanel from './components/TerminalPanel';
+import TerminalPanel, { uploadFileAndGetPath } from './components/TerminalPanel';
 import ToolApprovalPanel from './components/ToolApprovalPanel';
 import MobileGitDiff from './components/MobileGitDiff';
 import MobileStats from './components/MobileStats';
@@ -30,6 +30,7 @@ class Mobile extends AppBase {
       globalPlanApproval: null,   // { plan, handlers } — 全局计划审批浮层
       autoApproveSeconds: 0,
       hasGit: true,
+      terminalPendingImages: [],  // 终端面板独立的 pending 图片/文件
     });
   }
 
@@ -208,6 +209,68 @@ class Mobile extends AppBase {
     }).catch(() => {});
   };
 
+  // ─── 拖拽上传（iPad / Mobile） ────────────────────────────
+  _isInternalDrag = (e) => e.dataTransfer.types.includes('text/x-preset-reorder');
+
+  _onDragOver = (e) => {
+    e.preventDefault();
+    if (this._isInternalDrag(e)) return;
+    const overFileExplorer = e.target.closest && e.target.closest('[data-file-explorer]');
+    if (overFileExplorer) {
+      if (this.state.isDragging) this.setState({ isDragging: false });
+      return;
+    }
+    if (!this.state.isDragging) this.setState({ isDragging: true });
+  };
+
+  _onDragLeave = (e) => {
+    const layout = this._layoutRef.current;
+    if (layout && !layout.contains(e.relatedTarget)) {
+      this.setState({ isDragging: false });
+    }
+  };
+
+  _onDrop = (e) => {
+    e.preventDefault();
+    if (this._isInternalDrag(e)) return;
+    this.setState({ isDragging: false });
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    Promise.all(
+      files.map(file =>
+        uploadFileAndGetPath(file).then(path => ({ name: file.name, path }))
+          .catch(err => { message.error(`${file.name}: ${err.message}`); return null; })
+      )
+    ).then(results => {
+      const paths = results.filter(Boolean).map(r => `"${r.path}"`);
+      if (paths.length > 0) {
+        this.setState(prev => ({
+          pendingUploadPaths: [...(prev.pendingUploadPaths || []), ...paths],
+        }));
+      }
+    });
+  };
+
+  handleUploadPathsConsumed = () => {
+    this.setState({ pendingUploadPaths: [] });
+  };
+
+  _handleTerminalFilePath = (path) => {
+    this.setState(prev => ({
+      terminalPendingImages: [...prev.terminalPendingImages, { path, source: 'terminal' }],
+    }));
+  };
+
+  _handleRemoveTerminalImage = (idx) => {
+    this.setState(prev => ({
+      terminalPendingImages: prev.terminalPendingImages.filter((_, i) => i !== idx),
+    }));
+  };
+
+  _handleClearTerminalImages = () => {
+    this.setState({ terminalPendingImages: [] });
+  };
+
   render() {
     const { filteredRequests, fileLoading, fileLoadingCount, mainAgentSessions } = this.renderPrepare();
 
@@ -223,7 +286,15 @@ class Mobile extends AppBase {
     }
 
     return (
-      <div className={styles.mobileCLIRoot} ref={this._layoutRef}>
+      <div className={styles.mobileCLIRoot} ref={this._layoutRef} onDragOver={this._onDragOver} onDragLeave={this._onDragLeave} onDrop={this._onDrop}>
+        {this.state.isDragging && (
+          <div className={styles.dragOverlay}>
+            <div className={styles.dragOverlayContent}>
+              <UploadOutlined className={styles.dragIcon} />
+              <p>{t('ui.dragDropHint')}</p>
+            </div>
+          </div>
+        )}
         <div className={styles.mobileCLIHeader}>
           <div className={styles.mobileCLIHeaderLeft}>
             <button
@@ -364,6 +435,8 @@ class Mobile extends AppBase {
                     onLoadSession={(sid) => this.loadSession(sid)}
                     onPendingPermission={this.handlePendingPermission}
                     onPendingPlanApproval={this.handlePendingPlanApproval}
+                    pendingUploadPaths={this.state.pendingUploadPaths}
+                    onUploadPathsConsumed={this.handleUploadPathsConsumed}
                   />
                 </div>
               </ConfigProvider>
@@ -371,7 +444,13 @@ class Mobile extends AppBase {
           )}
           {!mobileIsLocalLog && (
             <div className={`${styles.mobileChatOverlay} ${this.state.mobileTerminalVisible ? styles.mobileChatOverlayVisible : ''}`}>
-              <TerminalPanel modelName={mobileModelName} />
+              <TerminalPanel
+                modelName={mobileModelName}
+                onFilePath={this._handleTerminalFilePath}
+                pendingImages={this.state.terminalPendingImages}
+                onRemovePendingImage={this._handleRemoveTerminalImage}
+                onClearPendingImages={this._handleClearTerminalImages}
+              />
             </div>
           )}
           <div className={`${styles.mobileGitDiffOverlay} ${this.state.mobileGitDiffVisible ? styles.mobileGitDiffOverlayVisible : ''}`}>

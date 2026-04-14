@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.154 (2026-04-14)
+
+- Feat: iPad drag-and-drop file upload support (mirrors desktop pattern)
+- Feat: iPad terminal panel image paste — images stay on terminal with preview strip
+- Fix: iPad approval panel uses `position: fixed` globally, visible in both dialog and terminal mode
+- Fix: iPad file explorer sidebar defaults to collapsed, respects user preference via localStorage
+- Refactor: extract terminal pending-image callbacks to stable class methods
+
 ## 1.6.153 (2026-04-14)
 
 - Feat: markdown save-as-image — capture rendered bubble as PNG via html2canvas
