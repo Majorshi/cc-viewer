@@ -424,11 +424,50 @@
   transform-origin: top left;
 }
 
+/* ─── 文件浏览器 overlay ─── */
+.mobileFileExplorerOverlay {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  z-index: 100;
+  background: var(--bg-base-alt);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobileFileExplorerOverlayVisible {
+  transform: translateX(0);
+}
+
+.mobileFileExplorerInner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  zoom: 0.6;
+}
+
+:global(html.mobile-ios) .mobileFileExplorerInner {
+  zoom: 1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / 0.6);
+  height: calc(100% / 0.6);
+  transform: scale(0.6);
+  transform-origin: top left;
+}
+
 /* ─── iPad/Pad 模式：取消 0.6 缩放，保持 PC 比例 ─── */
 :global(html.pad-mode) .mobileChatInner {
   zoom: 1;
 }
 :global(html.pad-mode) .mobileGitDiffInner {
+  zoom: 1;
+}
+:global(html.pad-mode) .mobileFileExplorerInner {
   zoom: 1;
 }
 

@@ -2512,6 +2512,11 @@ class ChatView extends React.Component {
     for (let i = 1; i < parts.length; i++) {
       ancestors.push(parts.slice(0, i).join('/'));
     }
+    // 移动端：通过回调打开 MobileFileExplorer
+    if (this.props.onMobileOpenFile) {
+      this.props.onMobileOpenFile(resolved, ancestors);
+      return;
+    }
     this._setFileExplorerOpen(true);
     this.setState(prev => {
       const newSet = new Set(prev.fileExplorerExpandedPaths);

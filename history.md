@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.157 (2026-04-15)
+
+- Feat: mobile hamburger menu — "Project Folder" entry opens file explorer overlay
+- Feat: mobile file explorer — top-bottom split layout (file tree + PC FileContentView/ImageViewer)
+- Feat: chat file path click — tapping file paths in mobile chat opens file explorer and navigates to file
+- Feat: i18n — `ui.projectFolder`, `ui.mobileFileExplorerHint` with 18 languages
+- Fix: overlay mutual exclusion — all setState calls include `mobileFileExplorerVisible`
+- Fix: Git Diff / Terminal header toggles missing `mobilePromptVisible: false`
+- Style: responsive file list height `min(300px, 45vh)` for small screens
+- Style: iOS zoom/transform and iPad pad-mode overrides for file explorer overlay
+
 ## 1.6.156 (2026-04-15)
 
 - Feat: UltraPlan mobile entry — "+" menu item opens modal with role selector, file upload, image paste

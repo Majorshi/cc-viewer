@@ -8,6 +8,7 @@ import ChatView from './components/ChatView';
 import TerminalPanel, { uploadFileAndGetPath } from './components/TerminalPanel';
 import ToolApprovalPanel from './components/ToolApprovalPanel';
 import MobileGitDiff from './components/MobileGitDiff';
+import MobileFileExplorer from './components/MobileFileExplorer';
 import MobileStats from './components/MobileStats';
 import OpenFolderIcon from './components/OpenFolderIcon';
 import { t } from './i18n';
@@ -26,6 +27,7 @@ class Mobile extends AppBase {
       mobileSettingsVisible: false,
       mobilePromptVisible: false,
       mobileTerminalVisible: false,
+      mobileFileExplorerVisible: false,
       globalPermission: null,     // { permission, handlers } — 全局权限审批浮层
       globalPlanApproval: null,   // { plan, handlers } — 全局计划审批浮层
       autoApproveSeconds: 0,
@@ -71,6 +73,23 @@ class Mobile extends AppBase {
     }
     super.componentWillUnmount();
   }
+
+  // ─── 对话中文件路径点击 → 打开移动端文件浏览器 ────────────
+  _handleMobileOpenFile = (filePath, ancestors) => {
+    // local log 模式下不打开文件浏览器
+    if (this.state.localLogFile) return;
+    this.setState({
+      mobileFileExplorerVisible: true,
+      mobileFileExplorerTarget: { file: filePath, ancestors: ancestors || [] },
+      mobileGitDiffVisible: false,
+      mobileTerminalVisible: false,
+      mobileStatsVisible: false,
+      mobileLogMgmtVisible: false,
+      mobileSettingsVisible: false,
+      mobilePromptVisible: false,
+      mobileChatVisible: false,
+    });
+  };
 
   // ─── Prompt 提取 ───────────────────────────────────────
 
@@ -337,7 +356,7 @@ class Mobile extends AppBase {
                 type="text"
                 size="small"
                 icon={<BranchesOutlined />}
-                onClick={() => this.setState(prev => ({ mobileGitDiffVisible: !prev.mobileGitDiffVisible, mobileChatVisible: false, mobileTerminalVisible: false, mobileStatsVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false }))}
+                onClick={() => this.setState(prev => ({ mobileGitDiffVisible: !prev.mobileGitDiffVisible, mobileChatVisible: false, mobileTerminalVisible: false, mobileStatsVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false, mobileFileExplorerVisible: false }))}
                 style={{ color: this.state.mobileGitDiffVisible ? 'var(--color-primary)' : 'var(--text-tertiary)', fontSize: 12 }}
               >
                 {this.state.mobileGitDiffVisible ? t('ui.mobileGitDiffExit') : t('ui.mobileGitDiffBrowse')}
@@ -348,7 +367,7 @@ class Mobile extends AppBase {
                 type="text"
                 size="small"
                 icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>}
-                onClick={() => this.setState(prev => ({ mobileTerminalVisible: !prev.mobileTerminalVisible, mobileGitDiffVisible: false, mobileStatsVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false }))}
+                onClick={() => this.setState(prev => ({ mobileTerminalVisible: !prev.mobileTerminalVisible, mobileGitDiffVisible: false, mobileStatsVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false, mobileFileExplorerVisible: false }))}
                 style={{ color: this.state.mobileTerminalVisible ? 'var(--color-primary)' : 'var(--text-tertiary)', fontSize: 12 }}
               >
                 {this.state.mobileTerminalVisible ? t('ui.mobileTerminalExit') : t('ui.mobileTerminalBrowse')}
@@ -361,7 +380,7 @@ class Mobile extends AppBase {
               <div className={styles.mobileMenuDropdown}>
                 <button
                   className={styles.mobileMenuItem}
-                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileLogMgmtVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false }); this.handleImportLocalLogs(); }}
+                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileLogMgmtVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false, mobileFileExplorerVisible: false }); this.handleImportLocalLogs(); }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -373,7 +392,7 @@ class Mobile extends AppBase {
                 </button>
                 <button
                   className={styles.mobileMenuItem}
-                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileStatsVisible: true, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false }); }}
+                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileStatsVisible: true, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false, mobileFileExplorerVisible: false }); }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="3" width="7" height="7" />
@@ -385,7 +404,7 @@ class Mobile extends AppBase {
                 </button>
                 <button
                   className={styles.mobileMenuItem}
-                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileSettingsVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobilePromptVisible: false }); }}
+                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileSettingsVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobilePromptVisible: false, mobileFileExplorerVisible: false }); }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="3" />
@@ -393,9 +412,20 @@ class Mobile extends AppBase {
                   </svg>
                   {t('ui.settings')}
                 </button>
+                {!mobileIsLocalLog && (
                 <button
                   className={styles.mobileMenuItem}
-                  onClick={() => { this.setState({ mobileMenuVisible: false, mobilePromptVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false }); }}
+                  onClick={() => { this.setState({ mobileMenuVisible: false, mobileFileExplorerVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false, mobilePromptVisible: false }); }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                  {t('ui.projectFolder')}
+                </button>
+                )}
+                <button
+                  className={styles.mobileMenuItem}
+                  onClick={() => { this.setState({ mobileMenuVisible: false, mobilePromptVisible: true, mobileStatsVisible: false, mobileGitDiffVisible: false, mobileChatVisible: false, mobileTerminalVisible: false, mobileLogMgmtVisible: false, mobileSettingsVisible: false, mobileFileExplorerVisible: false }); }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -447,6 +477,7 @@ class Mobile extends AppBase {
                     onPendingPlanApproval={this.handlePendingPlanApproval}
                     pendingUploadPaths={this.state.pendingUploadPaths}
                     onUploadPathsConsumed={this.handleUploadPathsConsumed}
+                    onMobileOpenFile={this._handleMobileOpenFile}
                   />
                 </div>
               </ConfigProvider>
@@ -466,6 +497,11 @@ class Mobile extends AppBase {
           <div className={`${styles.mobileGitDiffOverlay} ${this.state.mobileGitDiffVisible ? styles.mobileGitDiffOverlayVisible : ''}`}>
             <div className={styles.mobileGitDiffInner}>
               <MobileGitDiff visible={this.state.mobileGitDiffVisible} />
+            </div>
+          </div>
+          <div className={`${styles.mobileFileExplorerOverlay} ${this.state.mobileFileExplorerVisible ? styles.mobileFileExplorerOverlayVisible : ''}`}>
+            <div className={styles.mobileFileExplorerInner}>
+              <MobileFileExplorer visible={this.state.mobileFileExplorerVisible} onClose={() => this.setState({ mobileFileExplorerVisible: false, mobileFileExplorerTarget: null })} targetFile={this.state.mobileFileExplorerTarget} />
             </div>
           </div>
           <div className={`${styles.mobileStatsOverlay} ${this.state.mobileStatsVisible ? styles.mobileStatsOverlayVisible : ''}`}>
