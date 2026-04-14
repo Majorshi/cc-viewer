@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.151 (2026-04-14)
+
+- Feat: UltraPlan "强制执行" toggle default to ON
+
 ## 1.6.150 (2026-04-13)
 
 - Feat: iPad/tablet mode (`?ipad=1`) — Mobile layout with PC-level text scaling and interactions

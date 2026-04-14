@@ -101,7 +101,7 @@ class TerminalPanel extends React.Component {
       agentTeamEnabled: false,
       agentTeamPopoverOpen: false,
       ultraplanOpen: false,
-      ultraplanVariant: 'auto',
+      ultraplanVariant: 'subagents',
       ultraplanPrompt: '',
       ultraplanFiles: [],
       presetModalVisible: false,
