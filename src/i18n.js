@@ -4748,6 +4748,14 @@ const i18nData = {
     "ar": "SubAgent", "no": "SubAgent", "pt-BR": "SubAgent",
     "th": "SubAgent", "tr": "SubAgent", "uk": "SubAgent"
   },
+  "ui.permission.queued": {
+    "zh": "+{n} 排队中", "en": "+{n} queued", "zh-TW": "+{n} 排隊中",
+    "ko": "+{n} 대기 중", "ja": "+{n} キュー中", "de": "+{n} in Warteschlange",
+    "es": "+{n} en cola", "fr": "+{n} en attente", "it": "+{n} in coda",
+    "da": "+{n} i kø", "pl": "+{n} w kolejce", "ru": "+{n} в очереди",
+    "ar": "+{n} في الانتظار", "no": "+{n} i kø", "pt-BR": "+{n} na fila",
+    "th": "+{n} รอคิว", "tr": "+{n} sırada", "uk": "+{n} в черзі"
+  },
   "ui.teammate.idle_notification": {
     "zh": "{name} 已空闲", "en": "{name} is idle", "zh-TW": "{name} 已閒置",
     "ko": "{name} 유휴 상태", "ja": "{name} がアイドル", "de": "{name} ist untätig",
@@ -5633,6 +5641,30 @@ const i18nData = {
     "th": "อัปโหลดรูปภาพที่วางไม่สำเร็จ",
     "tr": "Yapıştırılan resim yüklenemedi",
     "uk": "Не вдалося завантажити вставлене зображення"
+  },
+  "ui.chatInput.clearContext": {
+    "zh": "清空上下文", "en": "Clear Context", "zh-TW": "清空上下文",
+    "ko": "컨텍스트 초기화", "ja": "コンテキストをクリア", "de": "Kontext leeren",
+    "es": "Limpiar contexto", "fr": "Effacer le contexte", "it": "Cancella contesto",
+    "da": "Ryd kontekst", "pl": "Wyczyść kontekst", "ru": "Очистить контекст",
+    "ar": "مسح السياق", "no": "Tøm kontekst", "pt-BR": "Limpar contexto",
+    "th": "ล้างบริบท", "tr": "Bağlamı temizle", "uk": "Очистити контекст"
+  },
+  "ui.chatInput.clearContextConfirm": {
+    "zh": "确定要清空当前对话上下文吗？此操作不可撤销。", "en": "Clear the current conversation context? This cannot be undone.",
+    "zh-TW": "確定要清空當前對話上下文嗎？此操作不可撤銷。",
+    "ko": "현재 대화 컨텍스트를 초기화하시겠습니까? 되돌릴 수 없습니다.",
+    "ja": "現在の会話コンテキストをクリアしますか？元に戻せません。",
+    "de": "Den aktuellen Kontext löschen? Dies kann nicht rückgängig gemacht werden.",
+    "es": "¿Limpiar el contexto actual? No se puede deshacer.",
+    "fr": "Effacer le contexte actuel ? Cette action est irréversible.",
+    "it": "Cancellare il contesto attuale? Questa azione non può essere annullata.",
+    "da": "Ryd den aktuelle kontekst? Kan ikke fortrydes.", "pl": "Wyczyścić kontekst? Tego nie można cofnąć.",
+    "ru": "Очистить текущий контекст? Это нельзя отменить.",
+    "ar": "مسح السياق الحالي؟ لا يمكن التراجع.", "no": "Tøm konteksten? Kan ikke angres.",
+    "pt-BR": "Limpar o contexto atual? Não pode ser desfeito.",
+    "th": "ล้างบริบทปัจจุบัน? ไม่สามารถย้อนกลับได้",
+    "tr": "Mevcut bağlamı temizle? Bu geri alınamaz.", "uk": "Очистити контекст? Це не можна скасувати."
   },
   "ui.terminal.upload": {
     "zh": "上传文件",

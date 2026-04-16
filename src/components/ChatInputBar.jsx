@@ -5,7 +5,7 @@ import { isMobile, isPad } from '../env';
 import { t } from '../i18n';
 import styles from './ChatInputBar.module.css';
 
-function ChatInputBar({ inputRef, inputEmpty, inputSuggestion, terminalVisible, onKeyDown, onChange, onSend, onSuggestionClick, onUploadPath, presetItems, onPresetSend, onOpenPresetModal, onOpenUltraPlan, isStreaming, streamingFading, pendingImages, onRemovePendingImage }) {
+function ChatInputBar({ inputRef, inputEmpty, inputSuggestion, terminalVisible, onKeyDown, onChange, onSend, onSuggestionClick, onUploadPath, presetItems, onPresetSend, onOpenPresetModal, onOpenUltraPlan, onClearContext, isStreaming, streamingFading, pendingImages, onRemovePendingImage }) {
   const [plusOpen, setPlusOpen] = useState(false);
 
   const handlePaste = async (e) => {
@@ -164,6 +164,14 @@ function ChatInputBar({ inputRef, inputEmpty, inputSuggestion, terminalVisible, 
                       <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/>
                     </svg>
                     <span>UltraPlan</span>
+                  </button>
+                )}
+                {onClearContext && (
+                  <button className={styles.plusMenuItem} onClick={() => { setPlusOpen(false); onClearContext(); }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                    <span>{t('ui.chatInput.clearContext')}</span>
                   </button>
                 )}
                 <button className={styles.plusMenuItem} onClick={() => {

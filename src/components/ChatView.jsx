@@ -1,5 +1,5 @@
 import React from 'react';
-import { Empty, Typography, Divider, Spin, Popover, message } from 'antd';
+import { Empty, Typography, Divider, Spin, Popover, Modal, message } from 'antd';
 import ChatMessage from './ChatMessage';
 import TerminalPanel, { uploadFileAndGetPath } from './TerminalPanel';
 import FileExplorer from './FileExplorer';
@@ -127,6 +127,7 @@ class ChatView extends React.Component {
       mobilePresetModalVisible: false,
       localAskAnswers: {}, // 提交后的本地答案映射，用于 Last Response 立即切换到非交互式
       pendingPermission: null, // { id, toolName, input } — active permission approval request
+      permissionQueue: [], // queued permission requests when one is already active
       pendingPlanApproval: null, // { id, input } — active ExitPlanMode approval in SDK mode
       pendingImages: [], // [{ path, source }] — images uploaded/pasted, shown as previews in chat input
       agentTeamEnabled: false,
@@ -1482,14 +1483,35 @@ class ChatView extends React.Component {
           this._askHookQuestions = null;
           this._sdkAskId = null;
         } else if (msg.type === 'perm-hook-pending') {
-          this.setState({ pendingPermission: { id: msg.id, toolName: msg.toolName, input: msg.input } });
+          // Queue support: if a permission panel is already showing, queue the new one
+          this.setState(state => {
+            if (state.pendingPermission) {
+              return { permissionQueue: [...state.permissionQueue, { id: msg.id, toolName: msg.toolName, input: msg.input }] };
+            }
+            return { pendingPermission: { id: msg.id, toolName: msg.toolName, input: msg.input } };
+          });
         } else if (msg.type === 'perm-hook-timeout') {
-          this.setState({ pendingPermission: null });
+          // Timeout carries id — only clear if it matches the active request, or remove from queue
+          this.setState(state => {
+            if (msg.id && state.pendingPermission?.id === msg.id) {
+              const next = state.permissionQueue[0] || null;
+              return { pendingPermission: next, permissionQueue: state.permissionQueue.slice(1) };
+            }
+            if (msg.id) {
+              return { permissionQueue: state.permissionQueue.filter(p => p.id !== msg.id) };
+            }
+            // Legacy timeout without id — clear all
+            return { pendingPermission: null, permissionQueue: [] };
+          });
         } else if (msg.type === 'perm-hook-resolved') {
-          // 另一端已审批，清除本端面板
-          if (this.state.pendingPermission?.id === msg.id) {
-            this.setState({ pendingPermission: null });
-          }
+          // 另一端已审批，清除本端面板 or remove from queue
+          this.setState(state => {
+            if (state.pendingPermission?.id === msg.id) {
+              const next = state.permissionQueue[0] || null;
+              return { pendingPermission: next, permissionQueue: state.permissionQueue.slice(1) };
+            }
+            return { permissionQueue: state.permissionQueue.filter(p => p.id !== msg.id) };
+          });
         } else if (msg.type === 'ask-hook-resolved') {
           // 另一端已回答 AskUserQuestion (PTY hook 模式)
           this._askHookActive = false;
@@ -1523,7 +1545,7 @@ class ChatView extends React.Component {
     this._inputWs.onclose = () => {
       // 清除可能残留的审批面板（WS 断连后无法响应）
       if (this.state.pendingPermission || this.state.pendingPlanApproval) {
-        this.setState({ pendingPermission: null, pendingPlanApproval: null });
+        this.setState({ pendingPermission: null, permissionQueue: [], pendingPlanApproval: null });
       }
       this._sdkAskId = null;
       this._askHookActive = false;
@@ -1750,19 +1772,27 @@ class ChatView extends React.Component {
     setTimeout(() => { this._promptSubmitting = false; }, 500);
   };
 
+  // Shift the next queued permission request into active position
+  _shiftPermissionQueue = () => {
+    this.setState(state => {
+      const next = state.permissionQueue[0] || null;
+      return { pendingPermission: next, permissionQueue: state.permissionQueue.slice(1) };
+    });
+  };
+
   handlePermissionAllow = (id) => {
     const perm = this.state.pendingPermission;
     if (perm?.source === 'pty' && perm.ptyPrompt) {
       const optNum = this._findPtyOptionNumber(perm.ptyPrompt, 'allow');
       this.handlePromptOptionClick(optNum);
-      this.setState({ pendingPermission: null });
+      this._shiftPermissionQueue();
       return;
     }
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'allow' }));
     }
-    this.setState({ pendingPermission: null });
+    this._shiftPermissionQueue();
   };
 
   handlePermissionAllowSession = (id) => {
@@ -1770,14 +1800,14 @@ class ChatView extends React.Component {
     if (perm?.source === 'pty' && perm.ptyPrompt) {
       const optNum = this._findPtyOptionNumber(perm.ptyPrompt, 'allowSession');
       this.handlePromptOptionClick(optNum);
-      this.setState({ pendingPermission: null });
+      this._shiftPermissionQueue();
       return;
     }
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'allow', allowSession: true }));
     }
-    this.setState({ pendingPermission: null });
+    this._shiftPermissionQueue();
   };
 
   handlePermissionDeny = (id) => {
@@ -1785,14 +1815,14 @@ class ChatView extends React.Component {
     if (perm?.source === 'pty' && perm.ptyPrompt) {
       const optNum = this._findPtyOptionNumber(perm.ptyPrompt, 'deny');
       this.handlePromptOptionClick(optNum);
-      this.setState({ pendingPermission: null });
+      this._shiftPermissionQueue();
       return;
     }
     const ws = this._inputWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'perm-hook-answer', id, decision: 'deny' }));
     }
-    this.setState({ pendingPermission: null });
+    this._shiftPermissionQueue();
   };
 
   _findPtyOptionNumber(prompt, decision) {
@@ -3126,6 +3156,7 @@ class ChatView extends React.Component {
                 onAutoApproveChange={this.props.onAutoApproveChange}
                 modelName={this._reqScanCache?.modelName}
                 source={this.state.pendingPermission?.source}
+                queueDepth={this.state.permissionQueue.length}
               />
             )}
             {!this.props.onPendingPlanApproval && this.state.pendingPlanApproval && (
@@ -3152,6 +3183,20 @@ class ChatView extends React.Component {
               onPresetSend={this.handlePresetSend}
               onOpenPresetModal={() => this.setState({ mobilePresetModalVisible: true })}
               onOpenUltraPlan={this.state.agentTeamEnabled && this.props.cliMode ? () => this.setState({ ultraplanModalOpen: true }) : null}
+              onClearContext={this.props.cliMode ? () => {
+                Modal.confirm({
+                  title: t('ui.chatInput.clearContextConfirm'),
+                  okType: 'danger',
+                  okText: t('ui.chatInput.clearContext'),
+                  onOk: () => {
+                    const textarea = this._inputRef.current;
+                    if (textarea) {
+                      textarea.value = '/clear';
+                      this.setState({ inputEmpty: false, pendingImages: [] }, () => this.handleInputSend());
+                    }
+                  },
+                });
+              } : null}
               isStreaming={this.props.isStreaming}
               streamingFading={this.state.streamingFading}
               pendingImages={this.state.pendingImages}

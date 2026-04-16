@@ -152,10 +152,22 @@ export default function GitChanges({ style, onClose, onFileClick, onOpenFile, re
 
   const isSingleRepo = !repos || repos.length <= 1;
 
+  // Aggregate insertions/deletions across all repos
+  const totalInsertions = repos ? repos.reduce((sum, r) => sum + (r.insertions || 0), 0) : 0;
+  const totalDeletions = repos ? repos.reduce((sum, r) => sum + (r.deletions || 0), 0) : 0;
+
   return (
     <div className={styles.gitChanges} style={style}>
       <div className={styles.header}>
-        <span className={styles.headerTitle}>{t('ui.gitChanges')}</span>
+        <span className={styles.headerTitle}>
+          {t('ui.gitChanges')}
+          {(totalInsertions > 0 || totalDeletions > 0) && (
+            <>
+              {' '}<span className={`${styles.statBadge} ${styles.statInsert}`}>+{totalInsertions}</span>
+              {' '}<span className={`${styles.statBadge} ${styles.statDelete}`}>-{totalDeletions}</span>
+            </>
+          )}
+        </span>
         <button className={styles.collapseBtn} onClick={onClose} title="Close">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="11 17 6 12 11 7"/>
@@ -196,6 +208,12 @@ export default function GitChanges({ style, onClose, onFileClick, onOpenFile, re
                   <path d="M18 9a9 9 0 0 1-9 9"/>
                 </svg>
                 <span className={styles.repoName}>{repo.name}</span>
+                {(repo.insertions > 0 || repo.deletions > 0) && (
+                  <>
+                    <span className={`${styles.statBadge} ${styles.statInsert}`}>+{repo.insertions}</span>
+                    <span className={`${styles.statBadge} ${styles.statDelete}`}>-{repo.deletions}</span>
+                  </>
+                )}
                 <span className={styles.repoBadge}>{repo.changes.length}</span>
               </div>
               {!collapsed && (

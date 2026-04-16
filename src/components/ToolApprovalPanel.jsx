@@ -5,7 +5,7 @@ import styles from './ToolApprovalPanel.module.css';
 
 const DEFAULT_AUTO_SECONDS = 3;
 
-function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSession, onDeny, visible, global: isGlobal, autoApproveSeconds = 0, onAutoApproveChange, modelName, source }) {
+function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSession, onDeny, visible, global: isGlobal, autoApproveSeconds = 0, onAutoApproveChange, modelName, source, queueDepth = 0 }) {
   const panelRef = useRef(null);
   const allowRef = useRef(null);
   const prevFocusRef = useRef(null);
@@ -145,6 +145,7 @@ function ToolApprovalPanel({ toolName, toolInput, requestId, onAllow, onAllowSes
       <div className={styles.header}>
         <span className={styles.toolName}>{toolName}</span>
         {source === 'pty' && <span className={styles.subAgentBadge}>{t('ui.subAgentApproval')}</span>}
+        {queueDepth > 0 && <span className={styles.subAgentBadge}>{t('ui.permission.queued', { n: queueDepth })}</span>}
         <span className={styles.label}>{t('ui.permission.approvalRequired')}</span>
       </div>
       <div className={styles.body}>

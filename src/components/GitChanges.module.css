@@ -220,3 +220,19 @@
   border-radius: 8px;
   flex-shrink: 0;
 }
+
+.statBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+}
+
+.statInsert {
+  color: #73c991;
+}
+
+.statDelete {
+  color: #f14c4c;
+}

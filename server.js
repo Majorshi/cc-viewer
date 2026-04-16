@@ -118,7 +118,9 @@ let _workspaceLaunched = false; // 工作区是否已经启动了会话
 let pendingAskHook = null; // { questions, res, timer, createdAt }
 
 // Permission hook bridge state (for PreToolUse permission approval)
-let pendingPermHook = null; // { toolName, input, res, timer, createdAt }
+// Map supports concurrent sub-agent/teammate requests (keyed by request id)
+const pendingPermHooks = new Map(); // Map<id, { toolName, input, res, timer, createdAt }>
+const PERM_HOOK_MAP_MAX = 50;
 
 // Editor session state (for $EDITOR intercept)
 const editorSessions = new Map(); // sessionId → { filePath, done, createdAt }
@@ -1934,30 +1936,31 @@ async function handleRequest(req, res) {
           return;
         }
 
-        // Cancel any previous pending permission request
-        if (pendingPermHook) {
-          try {
-            if (!pendingPermHook.res.headersSent) {
-              pendingPermHook.res.writeHead(409, { 'Content-Type': 'application/json' });
-              pendingPermHook.res.end(JSON.stringify({ error: 'Superseded' }));
-            }
-          } catch {}
-          clearTimeout(pendingPermHook.timer);
+        // Evict oldest if Map is full (prevent memory leak from pathological concurrency)
+        if (pendingPermHooks.size >= PERM_HOOK_MAP_MAX) {
+          const oldestId = pendingPermHooks.keys().next().value;
+          const oldest = pendingPermHooks.get(oldestId);
+          if (oldest) {
+            clearTimeout(oldest.timer);
+            try { if (!oldest.res.headersSent) { oldest.res.writeHead(429, { 'Content-Type': 'application/json' }); oldest.res.end(JSON.stringify({ error: 'Too many concurrent requests' })); } } catch {}
+            pendingPermHooks.delete(oldestId);
+          }
         }
 
         const HOOK_TIMEOUT = 5 * 60 * 1000;
         const id = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const timer = setTimeout(() => {
-          if (pendingPermHook && pendingPermHook.id === id) {
-            pendingPermHook = null;
+          const entry = pendingPermHooks.get(id);
+          if (entry) {
+            pendingPermHooks.delete(id);
             try {
-              if (!res.headersSent) {
-                res.writeHead(408, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'Timeout' }));
+              if (!entry.res.headersSent) {
+                entry.res.writeHead(408, { 'Content-Type': 'application/json' });
+                entry.res.end(JSON.stringify({ error: 'Timeout' }));
               }
             } catch {}
             if (terminalWss) {
-              const tmsg = JSON.stringify({ type: 'perm-hook-timeout' });
+              const tmsg = JSON.stringify({ type: 'perm-hook-timeout', id });
               terminalWss.clients.forEach((c) => {
                 if (c.readyState === 1) try { c.send(tmsg); } catch {}
               });
@@ -1965,7 +1968,7 @@ async function handleRequest(req, res) {
           }
         }, HOOK_TIMEOUT);
 
-        pendingPermHook = { id, toolName, input, res, timer, createdAt: Date.now() };
+        pendingPermHooks.set(id, { toolName, input, res, timer, createdAt: Date.now() });
 
         // Broadcast to all terminal WS clients
         if (terminalWss) {
@@ -1979,11 +1982,12 @@ async function handleRequest(req, res) {
 
         // Handle perm-bridge.js disconnection
         res.on('close', () => {
-          if (pendingPermHook && pendingPermHook.id === id) {
-            clearTimeout(pendingPermHook.timer);
-            pendingPermHook = null;
+          const entry = pendingPermHooks.get(id);
+          if (entry) {
+            clearTimeout(entry.timer);
+            pendingPermHooks.delete(id);
             if (terminalWss) {
-              const tmsg = JSON.stringify({ type: 'perm-hook-timeout' });
+              const tmsg = JSON.stringify({ type: 'perm-hook-timeout', id });
               terminalWss.clients.forEach((c) => {
                 if (c.readyState === 1) try { c.send(tmsg); } catch {}
               });
@@ -2238,8 +2242,24 @@ async function handleRequest(req, res) {
         }
         return { status, file };
       });
+
+      // Collect per-file insertions/deletions via git diff --numstat (tracked) + --cached --numstat (staged)
+      let insertions = 0, deletions = 0;
+      try {
+        const [{ stdout: numstat }, { stdout: cachedNumstat }] = await Promise.all([
+          execFileAsync('git', ['diff', '--numstat'], { cwd, encoding: 'utf-8', timeout: 5000 }),
+          execFileAsync('git', ['diff', '--cached', '--numstat'], { cwd, encoding: 'utf-8', timeout: 5000 }),
+        ]);
+        for (const raw of [numstat, cachedNumstat]) {
+          for (const l of raw.split('\n')) {
+            const m = l.match(/^(\d+)\t(\d+)\t/);
+            if (m) { insertions += Number(m[1]); deletions += Number(m[2]); }
+          }
+        }
+      } catch { /* non-critical — stats just stay 0 */ }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ changes }));
+      res.end(JSON.stringify({ changes, insertions, deletions }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message, changes: [] }));
@@ -2965,12 +2985,13 @@ async function setupTerminalWebSocket(httpServer) {
             // Permission approval — SDK mode (canUseTool) or PTY mode (hook bridge)
             let permAnswered = false;
             if (isSdkMode && _sdkResolveApproval && msg.id) {
-              _sdkResolveApproval(msg.id, msg.allowSession ? { decision: msg.decision || 'allow', allowSession: true } : (msg.decision || 'deny'));
-              permAnswered = true;
-            } else if (pendingPermHook && msg.id && msg.id === pendingPermHook.id) {
-              const { res: hookRes, timer } = pendingPermHook;
+              permAnswered = _sdkResolveApproval(msg.id, msg.allowSession ? { decision: msg.decision || 'allow', allowSession: true } : (msg.decision || 'deny'));
+            }
+            const hookEntry = !permAnswered && msg.id ? pendingPermHooks.get(msg.id) : undefined;
+            if (hookEntry) {
+              const { res: hookRes, timer } = hookEntry;
               clearTimeout(timer);
-              pendingPermHook = null;
+              pendingPermHooks.delete(msg.id);
               permAnswered = true;
               try {
                 if (!hookRes.headersSent) {

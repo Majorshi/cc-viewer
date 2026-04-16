@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.160 (2026-04-16)
+
+- Fix: permission hook concurrency — `pendingPermHook` single variable → `pendingPermHooks` Map, supports concurrent sub-agent/teammate approval requests without superseding
+- Fix: SDK mode answer routing — use `resolveApproval()` return value to prevent hook-based responses from being silently swallowed
+- Feat: permission queue — multiple concurrent approval requests are queued in UI, shown one at a time with `+N queued` badge
+- Feat: "Clear Context" shortcut button in + menu — sends `/clear` with Modal.confirm safety dialog
+- Feat: Git diff stats — `+N -M` insertion/deletion badges in Git Changes panel header and per-repo rows
+- Fix: perm-bridge.js — defensive 409 handling for legacy server compatibility
+
 ## 1.6.159 (2026-04-15)
 
 - Feat: custom user name and avatar via CLI — `--user-name <name>` and `--user-avatar <path|url>` override macOS system identity in chat UI
