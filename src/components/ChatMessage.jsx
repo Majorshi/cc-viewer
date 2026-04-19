@@ -48,11 +48,17 @@ function ChatImage({ src, alt, fallbackText }) {
 // （modelInfo / name / timestamp / requestIndex）在一轮响应内都是稳定的。
 // 提取为 memo 组件后 React 在浅比较通过时直接 bail out，不再进入内部
 // antd Text / 头像 innerHTML 的 reconciliation，显著降低 reconciler 工作量。
-const ModelAvatar = React.memo(function ModelAvatar({ modelInfo }) {
-  if (modelInfo?.svg) {
+// streaming 依赖链：ChatView 给"正在流式的那条消息"传 showTrailingCursor=true
+//   → ChatMessage.shouldComponentUpdate 行 99 检测到变化触发 re-render
+//   → renderAssistantMessage 把 showTrailingCursor 透传为 <ModelAvatar streaming>
+//   → 这里的 memo 浅比较 streaming bool 变化 → 切换 svgAnimated / svg
+//   → streaming 变 false 时自动切回静态 svg
+const ModelAvatar = React.memo(function ModelAvatar({ modelInfo, streaming }) {
+  const svgSource = (streaming && modelInfo?.svgAnimated) || modelInfo?.svg;
+  if (svgSource) {
     return (
       <div className={styles.avatar} style={{ background: modelInfo.color || 'var(--bg-model-avatar)' }}
-        dangerouslySetInnerHTML={{ __html: modelInfo.svg }}
+        dangerouslySetInnerHTML={{ __html: svgSource }}
       />
     );
   }
@@ -982,14 +988,14 @@ class ChatMessage extends React.Component {
   }
 
   renderAssistantMessage() {
-    const { content, toolResultMap = {}, modelInfo, timestamp, requestIndex, onViewRequest } = this.props;
+    const { content, toolResultMap = {}, modelInfo, timestamp, requestIndex, onViewRequest, showTrailingCursor } = this.props;
     const innerContent = this.renderAssistantContent(content, toolResultMap);
 
     if (innerContent.length === 0) return null;
 
     return (
       <div className={styles.messageRow}>
-        <ModelAvatar modelInfo={modelInfo} />
+        <ModelAvatar modelInfo={modelInfo} streaming={!!showTrailingCursor} />
         <div className={styles.contentCol}>
           <AssistantLabel
             name={modelInfo?.name || 'MainAgent'}

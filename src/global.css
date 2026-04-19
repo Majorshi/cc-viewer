@@ -109,6 +109,8 @@
   /* Model avatar */
   --bg-model-avatar: #000;
   --bg-sub-avatar: #3a3a3a;
+  /* 单色 logo（GLM/Kimi/MiniMax）随主题反转：dark=白、light=黑 */
+  --model-logo-mono: #fff;
   /* Input bar / sticky */
   --bg-input-bar: rgba(0, 0, 0, 0.5);
   --bg-sticky-btn: rgba(0, 0, 0, 0.5);
@@ -246,6 +248,7 @@
   /* Model avatar */
   --bg-model-avatar: transparent;
   --bg-sub-avatar: #C8C8C8;
+  --model-logo-mono: #000;
   /* Input bar / sticky */
   --bg-input-bar: #ffffff;
   --bg-sticky-btn: rgba(255, 255, 255, 0.85);

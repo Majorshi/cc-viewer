@@ -72,8 +72,24 @@ class ChatView extends React.Component {
     this._incToolSessionIdx = -1;
     this._prevSessions = null;
 
-    // requests 扫描缓存（tsToIndex / modelName / subAgentEntries）
-    this._reqScanCache = { tsToIndex: {}, modelName: null, subAgentEntries: [], processedCount: 0 };
+    // requests 扫描增量缓存。按职责分 3 类，增量扫描时只追加不回溯：
+    //
+    // ── 扫描游标 ──
+    //   processedCount       : requests 已扫到的位置（下次从此继续）
+    //   subAgentProcessedCount: subAgentEntries 的扫描游标（由 buildAllItems 写入）
+    //   tsToIndex            : req.timestamp → requests 数组下标；per-message modelInfo 解析的中转
+    //
+    // ── 模型状态机（区分"活跃 vs 已完成"）──
+    //   modelName            : 最后扫到的 MainAgent req.body.model。即使 req 还在流式（没 response）也更新。
+    //                          用于侧边栏角色菜单、权限模态、Last Response 面板等"需要最新态"的消费者。
+    //   completedModelName   : 仅当 req.response 存在时才更新的 model。在流式进行中永远指向"上一次已完成的模型"，
+    //                          用于 SSE streaming avatar —— 继承已完成而非推测 in-flight。避免头像闪烁。
+    //   modelNameByReqIdx[i] : 每个 request 下标"当时活跃"的模型名（carry-over：无 body.model 的 req 继承前一个）。
+    //                          per-message avatar 解析：tsToIndex[ts] → modelNameByReqIdx[idx] → getModelInfo。
+    //
+    // ── SubAgent/Teammate 渲染入口 ──
+    //   subAgentEntries      : 非 MainAgent 的 Sub/Teammate 消息渲染数据（时序插入到主列表里）
+    this._reqScanCache = { tsToIndex: {}, modelName: null, completedModelName: null, modelNameByReqIdx: [], subAgentEntries: [], processedCount: 0 };
 
     // buildAllItems session 级缓存
     // 每项: { session, msgsLen, subCount, items, tsEntries, lastPendingAskId, lastPendingPlanId }
@@ -383,7 +399,7 @@ class ChatView extends React.Component {
           this._incToolState = null;
           this._incToolProcessedCount = 0;
           this._incToolSessionIdx = -1;
-          this._reqScanCache = { tsToIndex: {}, modelName: null, subAgentEntries: [], processedCount: 0, subAgentProcessedCount: 0 };
+          this._reqScanCache = { tsToIndex: {}, modelName: null, completedModelName: null, modelNameByReqIdx: [], subAgentEntries: [], processedCount: 0, subAgentProcessedCount: 0 };
           this._sessionItemCache = [];
         }
         this._prevSessions = this.props.mainAgentSessions;
@@ -399,6 +415,9 @@ class ChatView extends React.Component {
     } else if (prevProps.requests !== this.props.requests) {
       // requests（filteredRequests）变化但 mainAgentSessions 未变 → 重建 tsToIndex 避免索引偏移
       this._reqScanCache.tsToIndex = {};
+      this._reqScanCache.modelName = null;
+      this._reqScanCache.completedModelName = null;
+      this._reqScanCache.modelNameByReqIdx = [];
       this._reqScanCache.processedCount = 0;
       this._reqScanCache.subAgentEntries = [];
       this._reqScanCache.subAgentProcessedCount = 0;
@@ -748,7 +767,7 @@ class ChatView extends React.Component {
     }
   }
 
-  renderSessionMessages(messages, keyPrefix, modelInfo, tsToIndex, startIdx = 0) {
+  renderSessionMessages(messages, keyPrefix, resolveModelInfo, tsToIndex, startIdx = 0) {
     const { userProfile, collapseToolResults, expandThinking, showFullToolContent, showThinkingSummaries, onViewRequest } = this.props;
     // 增量 / WeakMap 缓存
     let cached = getToolResultCache(messages);
@@ -835,6 +854,7 @@ class ChatView extends React.Component {
       const ts = msg._timestamp || null;
       const reqIdx = ts ? tsToIndex[ts] : undefined;
       const viewReqProps = reqIdx != null && onViewRequest ? { requestIndex: reqIdx, onViewRequest } : EMPTY_OBJ;
+      const modelInfo = resolveModelInfo(ts);
 
       if (msg.role === 'user') {
         if (Array.isArray(content)) {
@@ -977,7 +997,7 @@ class ChatView extends React.Component {
 
     if (teammateMap.size === 0) return [];
 
-    const modelInfo = null; // teammate 不需要 model 头像
+    const nullModelInfoResolver = () => null; // teammate 不需要 model 头像
     const allItems = [];
     let si = 0;
     for (const [name, session] of teammateMap) {
@@ -986,7 +1006,7 @@ class ChatView extends React.Component {
           <Text className={styles.sessionDividerText}>{name}</Text>
         </Divider>
       );
-      const { items: msgs } = this.renderSessionMessages(session.messages, `tm${si}`, modelInfo, {});
+      const { items: msgs } = this.renderSessionMessages(session.messages, `tm${si}`, nullModelInfoResolver, {});
       allItems.push(...msgs);
 
       // 渲染 response content（如果有）
@@ -1027,7 +1047,11 @@ class ChatView extends React.Component {
       if (startIdx === 0) {
         cache.tsToIndex = {};
         cache.modelName = null;
+        cache.completedModelName = null;
+        cache.modelNameByReqIdx = [];
       }
+      // carry-over 初值：从上轮末态继承，保证流式追加时非 MainAgent 或无 body.model 的 req 也能拿到"最近活跃模型"
+      let lastModelName = cache.modelName;
       for (let i = startIdx; i < requests.length; i++) {
         const req = requests[i];
         const ma = isMainAgent(req);
@@ -1035,8 +1059,13 @@ class ChatView extends React.Component {
           cache.tsToIndex[req.timestamp] = i;
         }
         if (ma && req.body?.model) {
-          cache.modelName = req.body.model;
+          lastModelName = req.body.model;
+          cache.modelName = lastModelName;
+          // 只在 response 已到达时更新 completedModelName。
+          // 流式进行中的 request 尚无 response，不应污染"上一次已完成的模型"。
+          if (req.response) cache.completedModelName = lastModelName;
         }
+        cache.modelNameByReqIdx[i] = lastModelName;
       }
       cache.processedCount = requests.length;
 
@@ -1078,7 +1107,16 @@ class ChatView extends React.Component {
       cache.subAgentProcessedCount = requests.length;
     }
     const tsToIndex = cache.tsToIndex;
-    const modelInfo = getModelInfo(cache.modelName);
+    const globalModelInfo = getModelInfo(cache.modelName);
+    // per-message resolver：按 msg._timestamp 查 tsToIndex → modelNameByReqIdx
+    // 未匹配 ts 或索引缺失时回落到 globalModelInfo（与旧行为等价）
+    const resolveModelInfo = (ts) => {
+      if (!ts) return globalModelInfo;
+      const idx = tsToIndex[ts];
+      if (idx == null) return globalModelInfo;
+      const name = cache.modelNameByReqIdx[idx];
+      return name ? getModelInfo(name) : globalModelInfo;
+    };
     const subAgentEntries = cache.subAgentEntries;
 
     const allItems = [];
@@ -1157,7 +1195,7 @@ class ChatView extends React.Component {
         lastPendingPlanId = sc.lastPendingPlanId;
       } else if (sc && sc.session === session && session.messages.length > sc.msgsLen) {
         // 增量：session 对象不变但消息增长 → 只渲染新消息，拼接到缓存
-        const result = this.renderSessionMessages(session.messages, `s${si}`, modelInfo, tsToIndex, sc.msgsLen);
+        const result = this.renderSessionMessages(session.messages, `s${si}`, resolveModelInfo, tsToIndex, sc.msgsLen);
         msgs = sc.items.concat(result.items);
         lastPendingAskId = result.lastPendingAskId;
         lastPendingPlanId = result.lastPendingPlanId;
@@ -1180,7 +1218,7 @@ class ChatView extends React.Component {
         }
       } else {
         // 缓存未命中 → 全量渲染
-        const result = this.renderSessionMessages(session.messages, `s${si}`, modelInfo, tsToIndex);
+        const result = this.renderSessionMessages(session.messages, `s${si}`, resolveModelInfo, tsToIndex);
         msgs = result.items;
         lastPendingAskId = result.lastPendingAskId;
         lastPendingPlanId = result.lastPendingPlanId;
@@ -1300,7 +1338,7 @@ class ChatView extends React.Component {
                 <Divider className={styles.lastResponseDivider}>
                   <Text type="secondary" className={styles.lastResponseLabel}>{t('ui.lastResponse')}</Text>
                 </Divider>
-                <ChatMessage key="resp-asst" role="assistant" content={lrContent} timestamp={session.entryTimestamp} modelInfo={modelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} showFullToolContent={showFullToolContent} toolResultMap={EMPTY_MAP} askAnswerMap={Object.keys(_localAsk).length > 0 ? _localAsk : EMPTY_MAP} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} lastPendingAskId={respLastPendingAskId} lastPendingPlanId={respLastPendingPlanId} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} ptyPrompt={this.state.ptyPrompt} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} cliMode={this.props.cliMode} onAskQuestionSubmit={this.handleAskQuestionSubmit} onOpenFile={this.handleOpenToolFilePath} />
+                <ChatMessage key="resp-asst" role="assistant" content={lrContent} timestamp={session.entryTimestamp} modelInfo={globalModelInfo} collapseToolResults={collapseToolResults} expandThinking={expandThinking} showFullToolContent={showFullToolContent} toolResultMap={EMPTY_MAP} askAnswerMap={Object.keys(_localAsk).length > 0 ? _localAsk : EMPTY_MAP} planApprovalMap={planApprovalMap} latestPlanContent={latestPlanContent} lastPendingAskId={respLastPendingAskId} lastPendingPlanId={respLastPendingPlanId} activePlanPrompt={activePlanPrompt} activeDangerousPrompt={activeDangerousPrompt} ptyPrompt={this.state.ptyPrompt} onPlanApprovalClick={this.handlePromptOptionClick} onPlanFeedbackSubmit={this.handlePlanFeedbackSubmit} onDangerousApprovalClick={this.handlePromptOptionClick} cliMode={this.props.cliMode} onAskQuestionSubmit={this.handleAskQuestionSubmit} onOpenFile={this.handleOpenToolFilePath} />
               </React.Fragment>
             );
           }
@@ -2877,12 +2915,19 @@ class ChatView extends React.Component {
         return false;
       });
       if (hasVisibleContent) {
+        // SSE streaming 消息的 modelInfo：继承"上一次已完成的 MainAgent model"，
+        // 而非当前正在进行中的 request.body.model（后者可能还没被扫到或不稳定）。
+        // completedModelName 仅在 req.response 存在时更新，流式期间永远指向上一次已完成模型。
+        // fallback 到 modelName 只是为了冷启动（从未有已完成请求时的边界情况）。
+        const cache = this._reqScanCache;
+        const streamingModelInfo = cache ? getModelInfo(cache.completedModelName || cache.modelName) : null;
         streamingLiveItem = (
           <ChatMessage
             key="streaming-live-msg"
             role="assistant"
             content={liveBlocks}
             timestamp={sl.timestamp}
+            modelInfo={streamingModelInfo}
             collapseToolResults={this.props.collapseToolResults}
             expandThinking={this.props.expandThinking}
             showFullToolContent={this.props.showFullToolContent}

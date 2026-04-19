@@ -8,7 +8,14 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: #fff;
+  color: var(--model-logo-mono);
+}
+
+/* 约束内嵌 svg（含动画 Claude logo）到容器尺寸；overflow:visible 让 pulse 时的触手尖能破圆而出 */
+.avatar > svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
 .avatarImg {
