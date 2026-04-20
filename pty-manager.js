@@ -95,7 +95,7 @@ function fixSpawnHelperPermissions() {
 }
 
 // Opus 4.7 默认不再返回 thinking；为所有非显式覆写的调用加上 summarized。
-// 纯函数：仅根据 args 决定是否注入；是否「应该」注入由 caller 先用 probeClaudeSupportsThinkingDisplay 判断。
+// 纯函数：仅根据 args 决定是否注入；用户已显式传入 `--thinking-display` 时原样返回。
 export function withDefaultThinkingDisplay(args) {
   if (!Array.isArray(args)) return args;
   const hasFlag = args.some(a =>
@@ -104,64 +104,24 @@ export function withDefaultThinkingDisplay(args) {
   return hasFlag ? args : [...args, '--thinking-display', 'summarized'];
 }
 
-// `--thinking-display` 自 Claude Code 2.1.112 起支持（更早版本会报 unknown option 崩溃）。
-// 运行时跑 `claude --version` 解析 semver，按 claudePath 缓存避免每次 spawn 都跑一次子进程。
-export const MIN_THINKING_DISPLAY_VERSION = [2, 1, 112];
-const _thinkingDisplaySupportCache = new Map();
+// 默认总是尝试注入 `--thinking-display summarized`；若目标 claude（或 claude-兼容 CLI/fork/wrapper）
+// 不识别该 flag，spawnClaude 的 onExit 会检测到 "unknown option" 错误，自动把 claudePath
+// 标记到本集合，下次 spawn 直接跳过注入——完全基于实际运行反馈，不依赖版本号或品牌。
+const _thinkingDisplayRejectedPaths = new Set();
 
-// 比较两个 [major, minor, patch] tuple：a ≥ b 返回 true
-export function gte(a, b) {
-  for (let i = 0; i < 3; i++) {
-    if (a[i] > b[i]) return true;
-    if (a[i] < b[i]) return false;
-  }
-  return true;
+// 仅用于测试/内部：清空拒绝集
+export function _clearThinkingDisplayRejectedPaths() {
+  _thinkingDisplayRejectedPaths.clear();
 }
 
-// 从 `claude --version` 输出抽 semver，例如 "2.1.114 (Claude Code)" → [2,1,114]
-// 备注：prerelease 后缀（如 "2.1.112-beta.1"）会被视同对应 release 版本——正则只抓头三段数字，
-// 忽略 `-beta`、`rc1`、`v` 前缀、第四段等变体。Anthropic 不发 prerelease，现实中无问题。
-export function parseClaudeVersion(output) {
-  if (typeof output !== 'string') return null;
-  const m = output.match(/(\d+)\.(\d+)\.(\d+)/);
-  if (!m) return null;
-  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+// 仅用于测试：查询路径是否已被标记为不支持
+export function _isThinkingDisplayRejected(claudePath) {
+  return _thinkingDisplayRejectedPaths.has(claudePath);
 }
 
-export async function probeClaudeSupportsThinkingDisplay(claudePath, nodePath, isNpmVersion) {
-  if (!claudePath) return false;
-  if (_thinkingDisplaySupportCache.has(claudePath)) return _thinkingDisplaySupportCache.get(claudePath);
-  try {
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
-    const run = promisify(execFile);
-    const useNode = isNpmVersion && typeof claudePath === 'string' && claudePath.endsWith('.js');
-    const cmd = useNode ? (nodePath || process.execPath) : claudePath;
-    const cmdArgs = useNode ? [claudePath, '--version'] : ['--version'];
-    const { stdout } = await run(cmd, cmdArgs, { timeout: 4000 });
-    const ver = parseClaudeVersion(stdout);
-    const supported = !!ver && gte(ver, MIN_THINKING_DISPLAY_VERSION);
-    _thinkingDisplaySupportCache.set(claudePath, supported);
-    return supported;
-  } catch {
-    // 探测失败（超时/错误）保守认为不支持——避免 spawn 时 claude 用 unknown option 崩溃。
-    _thinkingDisplaySupportCache.set(claudePath, false);
-    return false;
-  }
-}
-
-export function _clearThinkingDisplaySupportCache() {
-  _thinkingDisplaySupportCache.clear();
-}
-
-// 仅用于测试：查询指定路径是否在 cache 中
-export function _hasThinkingDisplaySupportCached(claudePath) {
-  return _thinkingDisplaySupportCache.has(claudePath);
-}
-
-// 仅用于测试：获取 cache 大小
-export function _thinkingDisplaySupportCacheSize() {
-  return _thinkingDisplaySupportCache.size;
+// 仅用于测试：强制把路径加入拒绝集，绕过第一次 crash
+export function _markThinkingDisplayRejected(claudePath) {
+  _thinkingDisplayRejectedPaths.add(claudePath);
 }
 
 export async function spawnClaude(proxyPort, cwd, extraArgs = [], claudePath = null, isNpmVersion = false, serverPort = null) {
@@ -184,6 +144,8 @@ export async function spawnClaude(proxyPort, cwd, extraArgs = [], claudePath = n
   const env = { ...process.env };
   env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}`;
   env.CCV_PROXY_MODE = '1'; // 告诉 interceptor.js 不要再启动 server
+  // 剥离 cc-viewer 的内部短路开关，避免泄漏给 claude 子进程
+  delete env.CCV_SKIP_THINKING_DISPLAY;
 
   // Resolve real Node.js path (Electron's process.execPath is the Electron binary)
   let nodePath = process.execPath;
@@ -214,8 +176,12 @@ export async function spawnClaude(proxyPort, cwd, extraArgs = [], claudePath = n
     }
   });
 
-  const supportsThinkingDisplay = await probeClaudeSupportsThinkingDisplay(claudePath, nodePath, isNpmVersion);
-  const finalExtraArgs = supportsThinkingDisplay ? withDefaultThinkingDisplay(extraArgs) : extraArgs;
+  // 注入 --thinking-display summarized；以下任一情况跳过注入：
+  // - 路径在拒绝集里（上次因此 crash 过）
+  // - 环境变量 CCV_SKIP_THINKING_DISPLAY=1（用户全局 opt-out，与 cli.js 保持一致）
+  const shouldInjectThinkingDisplay = !_thinkingDisplayRejectedPaths.has(claudePath)
+    && process.env.CCV_SKIP_THINKING_DISPLAY !== '1';
+  const finalExtraArgs = shouldInjectThinkingDisplay ? withDefaultThinkingDisplay(extraArgs) : extraArgs;
 
   let command = claudePath;
   let args = ['--settings', settingsJson, ...finalExtraArgs];
@@ -259,11 +225,29 @@ export async function spawnClaude(proxyPort, cwd, extraArgs = [], claudePath = n
     ptyProcess = null;
 
     // Auto-retry without -c/--continue if "No conversation found"
+    // 注意：早退 return 会跳过下方的 exitListeners 广播——第一次失败的 pty 死亡对消费者
+    // 是透明的。新 pty 正常启动后自己会上报 state/exit。这样避免前端看到一次假的退出事件。
     const hasContinue = extraArgs.includes('-c') || extraArgs.includes('--continue');
     if (hasContinue && exitCode !== 0 && outputBuffer.includes('No conversation found')) {
       console.error('[CC Viewer] -c failed (no conversation), retrying without -c');
       const retryArgs = extraArgs.filter(a => a !== '-c' && a !== '--continue');
       spawnClaude(proxyPort, cwd, retryArgs, claudePath, isNpmVersion, serverPort);
+      return;
+    }
+
+    // 事后兜底：如果我们注入了 --thinking-display 且 claude 以 "unknown option" 崩溃，
+    // 把该 claudePath 加入拒绝集并去掉 flag 重启一次——老版 claude / 三方 CLI fork / GLM wrapper 由此自愈。
+    // 只在「我们注入的」场景触发：extraArgs 没有 flag 但 finalExtraArgs 有 → 说明是注入的；
+    // 用户自己传了 --thinking-display 崩溃则不动，避免覆盖用户意图。
+    // 和 -c 重试一致，早退 return 跳过 exitListeners 广播，让第一次假失败对消费者透明。
+    const weInjectedFlag = shouldInjectThinkingDisplay
+      && !extraArgs.some(a => a === '--thinking-display' || (typeof a === 'string' && a.startsWith('--thinking-display=')));
+    const flagRejected = weInjectedFlag && exitCode !== 0
+      && /unknown option ['"]--thinking-display/i.test(outputBuffer);
+    if (flagRejected) {
+      console.error('[CC Viewer] claude rejected --thinking-display, marking as unsupported and retrying without flag');
+      _thinkingDisplayRejectedPaths.add(claudePath);
+      spawnClaude(proxyPort, cwd, extraArgs, claudePath, isNpmVersion, serverPort);
       return;
     }
 

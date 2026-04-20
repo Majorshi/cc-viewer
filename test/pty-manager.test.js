@@ -13,13 +13,9 @@ import {
   getCurrentWorkspace,
   getOutputBuffer,
   withDefaultThinkingDisplay,
-  parseClaudeVersion,
-  probeClaudeSupportsThinkingDisplay,
-  _clearThinkingDisplaySupportCache,
-  _hasThinkingDisplaySupportCached,
-  _thinkingDisplaySupportCacheSize,
-  gte,
-  MIN_THINKING_DISPLAY_VERSION,
+  _clearThinkingDisplayRejectedPaths,
+  _isThinkingDisplayRejected,
+  _markThinkingDisplayRejected,
 } from '../pty-manager.js';
 
 // ─── getPtyPid / getPtyState / getCurrentWorkspace (no PTY running) ───
@@ -199,6 +195,198 @@ describe('pty-manager: spawnClaude integration', () => {
     assert.equal(first._isKilled(), true);
     assert.equal(spawned.length, 2);
   });
+
+  // 轮询等条件满足；替代固定 setTimeout 在慢 CI 上的 flake
+  const waitUntil = async (predicate, { timeoutMs = 500, intervalMs = 5 } = {}) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) return;
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+    throw new Error(`waitUntil timeout after ${timeoutMs}ms`);
+  };
+
+  // 构造一个 mock pty：第一次 spawn 吐 errorText 并 exit 1，后续正常
+  const makeMockPtyOnceCrash = (errorText) => () => ({
+    spawn(command, args, opts) {
+      const dataHandlers = [];
+      const exitHandlers = [];
+      const idx = spawned.length;
+      const inst = {
+        pid: 1000 + idx, command, args, opts,
+        write() {}, resize() {}, kill() {},
+        onData(cb) { dataHandlers.push(cb); },
+        onExit(cb) { exitHandlers.push(cb); },
+      };
+      spawned.push(inst);
+      if (idx === 0) {
+        queueMicrotask(() => {
+          for (const cb of dataHandlers) cb(errorText);
+          for (const cb of exitHandlers) cb({ exitCode: 1 });
+        });
+      }
+      return inst;
+    },
+  });
+
+  it('retries without --thinking-display when claude crashes with unknown option (single quotes)', async () => {
+    _clearThinkingDisplayRejectedPaths();
+    _setPtyImportForTests(makeMockPtyOnceCrash("error: unknown option '--thinking-display'\n"));
+
+    const origError = console.error;
+    console.error = () => {};
+
+    await spawnClaude(9999, process.cwd(), [], '/bin/fake-claude');
+    await waitUntil(() => spawned.length >= 2);
+
+    console.error = origError;
+
+    assert.equal(spawned.length, 2, 'should have spawned twice (initial + retry)');
+    assert.ok(spawned[0].args.includes('--thinking-display'), 'first spawn has flag');
+    assert.ok(!spawned[1].args.includes('--thinking-display'), 'retry spawn strips flag');
+    assert.equal(_isThinkingDisplayRejected('/bin/fake-claude'), true, 'path marked as rejecting the flag');
+  });
+
+  it('retries also on double-quoted error variant', async () => {
+    _clearThinkingDisplayRejectedPaths();
+    _setPtyImportForTests(makeMockPtyOnceCrash('error: unknown option "--thinking-display"\n'));
+
+    const origError = console.error;
+    console.error = () => {};
+
+    await spawnClaude(9999, process.cwd(), [], '/bin/fake-claude-dq');
+    await waitUntil(() => spawned.length >= 2);
+
+    console.error = origError;
+
+    assert.equal(spawned.length, 2);
+    assert.ok(!spawned[1].args.includes('--thinking-display'));
+    assert.equal(_isThinkingDisplayRejected('/bin/fake-claude-dq'), true);
+  });
+
+  it('does not retry if crash is unrelated to --thinking-display', async () => {
+    _clearThinkingDisplayRejectedPaths();
+
+    let spawnCount = 0;
+    _setPtyImportForTests(() => ({
+      spawn(command, args, opts) {
+        const exitHandlers = [];
+        const inst = {
+          pid: 200 + spawnCount,
+          command, args, opts,
+          write() {}, resize() {}, kill() {},
+          onData() {},
+          onExit(cb) { exitHandlers.push(cb); },
+        };
+        spawned.push(inst);
+        if (spawnCount === 0) {
+          // 非 flag 相关的崩溃，不应触发 retry
+          queueMicrotask(() => {
+            for (const cb of exitHandlers) cb({ exitCode: 2 });
+          });
+        }
+        spawnCount++;
+        return inst;
+      },
+    }));
+
+    await spawnClaude(9999, process.cwd(), [], '/bin/fake-claude-2');
+    // 等待异步 exit 处理完——用短轮询确认 spawned 计数稳定
+    await waitUntil(() => spawned[0] != null);
+    await new Promise(r => setTimeout(r, 30)); // 短暂额外等待确保不会有第二次 spawn
+
+    assert.equal(spawned.length, 1, 'should NOT retry for unrelated crash');
+    assert.equal(_isThinkingDisplayRejected('/bin/fake-claude-2'), false, 'non-flag crash does not touch rejected set');
+  });
+
+  it('skips injection when CCV_SKIP_THINKING_DISPLAY=1', async () => {
+    _clearThinkingDisplayRejectedPaths();
+    const prev = process.env.CCV_SKIP_THINKING_DISPLAY;
+    process.env.CCV_SKIP_THINKING_DISPLAY = '1';
+
+    _setPtyImportForTests(() => ({
+      spawn(command, args, opts) {
+        const inst = {
+          pid: 500, command, args, opts,
+          write() {}, resize() {}, kill() {},
+          onData() {}, onExit() {},
+        };
+        spawned.push(inst);
+        return inst;
+      },
+    }));
+
+    try {
+      await spawnClaude(9999, process.cwd(), [], '/bin/fake-claude-env');
+      assert.equal(spawned.length, 1);
+      assert.ok(!spawned[0].args.includes('--thinking-display'),
+        'env var short-circuits injection');
+    } finally {
+      if (prev === undefined) delete process.env.CCV_SKIP_THINKING_DISPLAY;
+      else process.env.CCV_SKIP_THINKING_DISPLAY = prev;
+    }
+  });
+
+  it('skips injection when claudePath is in rejected set (no crash+retry loop)', async () => {
+    _clearThinkingDisplayRejectedPaths();
+    _markThinkingDisplayRejected('/bin/fake-claude-pre-rejected');
+
+    let spawnCount = 0;
+    _setPtyImportForTests(() => ({
+      spawn(command, args, opts) {
+        const exitHandlers = [];
+        const inst = {
+          pid: 400 + spawnCount,
+          command, args, opts,
+          write() {}, resize() {}, kill() {},
+          onData() {},
+          onExit(cb) { exitHandlers.push(cb); },
+        };
+        spawned.push(inst);
+        spawnCount++;
+        return inst;
+      },
+    }));
+
+    await spawnClaude(9999, process.cwd(), [], '/bin/fake-claude-pre-rejected');
+    assert.equal(spawned.length, 1, 'single spawn, no crash loop');
+    assert.ok(!spawned[0].args.includes('--thinking-display'), 'flag skipped because path was pre-rejected');
+  });
+
+  it('does not retry when user explicitly passed --thinking-display themselves', async () => {
+    _clearThinkingDisplayRejectedPaths();
+
+    let spawnCount = 0;
+    _setPtyImportForTests(() => ({
+      spawn(command, args, opts) {
+        const dataHandlers = [];
+        const exitHandlers = [];
+        const inst = {
+          pid: 300 + spawnCount,
+          command, args, opts,
+          write() {}, resize() {}, kill() {},
+          onData(cb) { dataHandlers.push(cb); },
+          onExit(cb) { exitHandlers.push(cb); },
+        };
+        spawned.push(inst);
+        if (spawnCount === 0) {
+          queueMicrotask(() => {
+            for (const cb of dataHandlers) cb("error: unknown option '--thinking-display'\n");
+            for (const cb of exitHandlers) cb({ exitCode: 1 });
+          });
+        }
+        spawnCount++;
+        return inst;
+      },
+    }));
+
+    // 用户显式传了 flag：即使崩溃也不是「我们注入」的锅，不自动改用户意图
+    await spawnClaude(9999, process.cwd(), ['--thinking-display', 'off'], '/bin/fake-claude-3');
+    await waitUntil(() => spawned[0] != null);
+    await new Promise(r => setTimeout(r, 30)); // 短暂额外等待确保不会有第二次 spawn
+
+    assert.equal(spawned.length, 1, 'user-provided flag → no auto-retry');
+  });
 });
 
 // ─── output buffer truncation ───
@@ -262,122 +450,3 @@ describe('pty-manager: withDefaultThinkingDisplay', () => {
   });
 });
 
-// ─── parseClaudeVersion ───
-
-describe('pty-manager: parseClaudeVersion', () => {
-  it('parses standard `X.Y.Z (Claude Code)` output', () => {
-    assert.deepEqual(parseClaudeVersion('2.1.114 (Claude Code)'), [2, 1, 114]);
-  });
-
-  it('parses just a version string', () => {
-    assert.deepEqual(parseClaudeVersion('1.0.0'), [1, 0, 0]);
-  });
-
-  it('parses version with leading text', () => {
-    assert.deepEqual(parseClaudeVersion('claude version 2.1.112\n'), [2, 1, 112]);
-  });
-
-  it('returns null on non-string input', () => {
-    assert.equal(parseClaudeVersion(null), null);
-    assert.equal(parseClaudeVersion(undefined), null);
-    assert.equal(parseClaudeVersion(123), null);
-  });
-
-  it('returns null when no semver found', () => {
-    assert.equal(parseClaudeVersion('no version here'), null);
-    assert.equal(parseClaudeVersion(''), null);
-  });
-
-  it('picks the first semver when multiple appear', () => {
-    assert.deepEqual(parseClaudeVersion('claude 2.1.114 node 20.11.1'), [2, 1, 114]);
-  });
-});
-
-// ─── probeClaudeSupportsThinkingDisplay ───
-// 通过替换全局模块 loader 来 mock execFile 成本较高，这里用真实 execFile 调 `node --version`
-// 验证 semver 解析 + 缓存机制（node 版本肯定高于 2.1.112，判断为支持）。
-describe('pty-manager: probeClaudeSupportsThinkingDisplay', () => {
-  beforeEach(() => { _clearThinkingDisplaySupportCache(); });
-
-  it('returns false when claudePath is null/empty', async () => {
-    assert.equal(await probeClaudeSupportsThinkingDisplay(null, null, false), false);
-    assert.equal(await probeClaudeSupportsThinkingDisplay('', null, false), false);
-  });
-
-  it('returns false when probe fails (non-existent binary)', async () => {
-    const r = await probeClaudeSupportsThinkingDisplay('/no/such/claude-binary-does-not-exist', null, false);
-    assert.equal(r, false);
-  });
-
-  it('returns false idempotently for non-existent path (not a positive cache-effectiveness test)', async () => {
-    const path = '/no/such/claude-binary-for-cache-test';
-    const r1 = await probeClaudeSupportsThinkingDisplay(path, null, false);
-    const r2 = await probeClaudeSupportsThinkingDisplay(path, null, false);
-    assert.equal(r1, r2);
-    // 注：两次都走 spawn 失败路径，即使不缓存也返回一致。此 test 只保证幂等语义。
-    // 真正证明缓存生效的 test 见下方 "caches positive result and avoids re-probing"。
-  });
-
-  it('caches positive result and avoids re-probing', async () => {
-    assert.equal(_thinkingDisplaySupportCacheSize(), 0, 'cache empty at start');
-    const first = await probeClaudeSupportsThinkingDisplay(process.execPath, null, false);
-    assert.equal(first, true);
-    assert.equal(_thinkingDisplaySupportCacheSize(), 1, 'one entry after first probe');
-    assert.equal(_hasThinkingDisplaySupportCached(process.execPath), true, 'path is cached');
-    const second = await probeClaudeSupportsThinkingDisplay(process.execPath, null, false);
-    assert.equal(second, true);
-    assert.equal(_thinkingDisplaySupportCacheSize(), 1, 'cache size unchanged after second probe — hit, no new entry');
-  });
-
-  it('returns true when probed binary reports ≥ 2.1.112 (simulated via node which returns Node semver)', async () => {
-    // `node --version` 输出 "v<semver>" —— parseClaudeVersion 提取 semver；Node 20+ 远高于 2.1.112
-    const r = await probeClaudeSupportsThinkingDisplay(process.execPath, null, false);
-    assert.equal(r, true);
-  });
-});
-
-// ─── gte (semver tuple comparison) ───
-
-describe('pty-manager: gte', () => {
-  it('returns true for equal versions', () => {
-    assert.equal(gte([2, 1, 112], [2, 1, 112]), true);
-    assert.equal(gte([0, 0, 0], [0, 0, 0]), true);
-  });
-
-  it('returns false when patch is lower', () => {
-    assert.equal(gte([2, 1, 111], [2, 1, 112]), false);
-    assert.equal(gte([2, 1, 0], [2, 1, 112]), false);
-  });
-
-  it('returns true when patch is higher', () => {
-    assert.equal(gte([2, 1, 113], [2, 1, 112]), true);
-    assert.equal(gte([2, 1, 114], [2, 1, 112]), true);
-  });
-
-  it('returns true when minor is higher (patch lower)', () => {
-    assert.equal(gte([2, 2, 0], [2, 1, 112]), true);
-  });
-
-  it('returns false when minor is lower (patch higher)', () => {
-    assert.equal(gte([2, 0, 999], [2, 1, 112]), false);
-    assert.equal(gte([1, 9, 9], [2, 1, 112]), false);
-  });
-
-  it('returns true when major is higher', () => {
-    assert.equal(gte([3, 0, 0], [2, 1, 112]), true);
-    assert.equal(gte([3, 0, 0], [2, 99, 999]), true);
-  });
-
-  it('returns false when major is lower', () => {
-    assert.equal(gte([1, 99, 999], [2, 1, 112]), false);
-    assert.equal(gte([0, 999, 999], [2, 0, 0]), false);
-  });
-});
-
-// ─── MIN_THINKING_DISPLAY_VERSION constant ───
-
-describe('pty-manager: MIN_THINKING_DISPLAY_VERSION', () => {
-  it('matches the known introduction version 2.1.112', () => {
-    assert.deepEqual(MIN_THINKING_DISPLAY_VERSION, [2, 1, 112]);
-  });
-});

@@ -267,6 +267,8 @@ async function runProxyCommand(args) {
     }
     env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}`;
     env.CCV_PROXY_MODE = '1'; // 告诉 interceptor.js 不要再启动 server
+    // 剥离 cc-viewer 的内部短路开关，避免泄漏给 claude 子进程
+    delete env.CCV_SKIP_THINKING_DISPLAY;
 
     const settingsJson = JSON.stringify({
       env: {
@@ -274,15 +276,14 @@ async function runProxyCommand(args) {
       }
     });
 
-    // 注入默认 --thinking-display summarized（Claude Code ≥2.1.112 支持）。
-    // 仅对 claude 二进制探测；其他用户命令（`ccv run -- sometool`）跳过，避免无意义子进程 + cache 污染。
-    // 探测 `claude --version` 解析 semver；不支持/探测失败时跳过注入，避免 unknown option 崩溃。
+    // 注入默认 --thinking-display summarized，仅对 claude 二进制（其他命令如 `ccv run -- sometool` 跳过）。
+    // 若 claude 不识别该 flag（老版本/fork）会 unknown option 崩溃——由 pty-manager.js::spawnClaude 的
+    // onExit reactive retry 兜底；cli.js 这条路径是一次性子进程，没有 respawn 机会，用户需手动重试。
+    // 可通过环境变量 CCV_SKIP_THINKING_DISPLAY=1 强制跳过。
     const isClaudeCmd = cmd === 'claude' || /[\\/]claude(\.exe)?$/.test(cmd);
-    if (isClaudeCmd) {
-      const { withDefaultThinkingDisplay, probeClaudeSupportsThinkingDisplay } = await import('./pty-manager.js');
-      if (await probeClaudeSupportsThinkingDisplay(cmd, process.execPath, false)) {
-        cmdArgs = withDefaultThinkingDisplay(cmdArgs);
-      }
+    if (isClaudeCmd && process.env.CCV_SKIP_THINKING_DISPLAY !== '1') {
+      const { withDefaultThinkingDisplay } = await import('./pty-manager.js');
+      cmdArgs = withDefaultThinkingDisplay(cmdArgs);
     }
 
     cmdArgs.unshift(settingsJson);
