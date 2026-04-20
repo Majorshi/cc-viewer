@@ -1,128 +1,35 @@
 # EnterPlanMode
 
-## Definición
+Cambia la sesión al modo plan, una fase de exploración de solo lectura en la que el asistente investiga el código y redacta un plan de implementación concreto para que el usuario lo apruebe antes de modificar archivo alguno.
 
-Cambia Claude Code al modo de planificación, utilizado para explorar la base de código y diseñar un plan antes de la implementación.
+## Cuándo usar
+
+- El usuario solicita un cambio no trivial que abarca varios archivos o subsistemas.
+- Los requisitos son ambiguos y el asistente necesita leer código antes de comprometerse con un enfoque.
+- Se propone un refactor, migración o actualización de dependencia y el radio de impacto no está claro.
+- El usuario dice explícitamente "planea esto", "primero hagamos un plan", o solicita una revisión de diseño.
+- El riesgo es lo suficientemente alto como para que pasar directamente a editar pueda desperdiciar trabajo o dañar el estado.
 
 ## Parámetros
 
-Sin parámetros.
+Ninguno. `EnterPlanMode` no recibe argumentos — invócalo con un objeto de parámetros vacío.
 
-## Casos de uso
+## Ejemplos
 
-**Adecuado para:**
-- Implementación de nuevas funcionalidades — requiere decisiones de arquitectura
-- Existen múltiples enfoques viables — requiere que el usuario elija
-- Las modificaciones de código afectan el comportamiento o la estructura existente
-- Cambios en múltiples archivos — posiblemente involucra 2-3 o más archivos
-- Requisitos poco claros — necesita explorar primero para entender el alcance
-- Las preferencias del usuario son importantes — la implementación puede tener múltiples direcciones razonables
+### Ejemplo 1: Solicitud de funcionalidad grande
 
-**No adecuado para:**
-- Correcciones de una línea o pocas líneas (errores tipográficos, bugs obvios)
-- El usuario ya dio instrucciones muy específicas
-- Tareas puramente de investigación/exploración — usar Task (tipo Explore)
+El usuario pregunta: "Añade SSO mediante Okta al panel de administración." El asistente llama a `EnterPlanMode`, luego pasa varios turnos leyendo el middleware de autenticación, el almacenamiento de sesiones, los guardas de rutas y la interfaz de inicio de sesión existente. Escribe un plan que describe los cambios necesarios, los pasos de migración y la cobertura de pruebas, y lo envía mediante `ExitPlanMode` para su aprobación.
 
-## Comportamiento en modo de planificación
+### Ejemplo 2: Refactor arriesgado
 
-Después de entrar en modo de planificación, Claude Code:
-1. Usa las herramientas Glob, Grep, Read para explorar la base de código en profundidad
-2. Comprende los patrones y la arquitectura existentes
-3. Diseña un plan de implementación
-4. Envía el plan al usuario para aprobación
-5. Puede usar AskUserQuestion si necesita aclaraciones
-6. Sale mediante ExitPlanMode cuando el plan está listo
+El usuario dice: "Convierte los controladores REST a tRPC." El asistente entra en modo plan, examina cada controlador, cataloga el contrato público, enumera las fases de despliegue (shim, lectura dual, cutover) y propone un plan de secuenciación antes de tocar ningún archivo.
 
 ## Notas
 
-- Esta herramienta requiere el consentimiento del usuario para entrar en modo de planificación
-- Si no está seguro de si se necesita planificación, es preferible planificar — alinear de antemano es mejor que rehacer
-
-## Texto original
-
-<textarea readonly>Use this tool proactively when you're about to start a non-trivial implementation task. Getting user sign-off on your approach before writing code prevents wasted effort and ensures alignment. This tool transitions you into plan mode where you can explore the codebase and design an implementation approach for user approval.
-
-## When to Use This Tool
-
-**Prefer using EnterPlanMode** for implementation tasks unless they're simple. Use it when ANY of these conditions apply:
-
-1. **New Feature Implementation**: Adding meaningful new functionality
-   - Example: "Add a logout button" - where should it go? What should happen on click?
-   - Example: "Add form validation" - what rules? What error messages?
-
-2. **Multiple Valid Approaches**: The task can be solved in several different ways
-   - Example: "Add caching to the API" - could use Redis, in-memory, file-based, etc.
-   - Example: "Improve performance" - many optimization strategies possible
-
-3. **Code Modifications**: Changes that affect existing behavior or structure
-   - Example: "Update the login flow" - what exactly should change?
-   - Example: "Refactor this component" - what's the target architecture?
-
-4. **Architectural Decisions**: The task requires choosing between patterns or technologies
-   - Example: "Add real-time updates" - WebSockets vs SSE vs polling
-   - Example: "Implement state management" - Redux vs Context vs custom solution
-
-5. **Multi-File Changes**: The task will likely touch more than 2-3 files
-   - Example: "Refactor the authentication system"
-   - Example: "Add a new API endpoint with tests"
-
-6. **Unclear Requirements**: You need to explore before understanding the full scope
-   - Example: "Make the app faster" - need to profile and identify bottlenecks
-   - Example: "Fix the bug in checkout" - need to investigate root cause
-
-7. **User Preferences Matter**: The implementation could reasonably go multiple ways
-   - If you would use AskUserQuestion to clarify the approach, use EnterPlanMode instead
-   - Plan mode lets you explore first, then present options with context
-
-## When NOT to Use This Tool
-
-Only skip EnterPlanMode for simple tasks:
-- Single-line or few-line fixes (typos, obvious bugs, small tweaks)
-- Adding a single function with clear requirements
-- Tasks where the user has given very specific, detailed instructions
-- Pure research/exploration tasks (use the Agent tool with explore agent instead)
-
-## What Happens in Plan Mode
-
-In plan mode, you'll:
-1. Thoroughly explore the codebase using Glob, Grep, and Read tools
-2. Understand existing patterns and architecture
-3. Design an implementation approach
-4. Present your plan to the user for approval
-5. Use AskUserQuestion if you need to clarify approaches
-6. Exit plan mode with ExitPlanMode when ready to implement
-
-## Examples
-
-### GOOD - Use EnterPlanMode:
-User: "Add user authentication to the app"
-- Requires architectural decisions (session vs JWT, where to store tokens, middleware structure)
-
-User: "Optimize the database queries"
-- Multiple approaches possible, need to profile first, significant impact
-
-User: "Implement dark mode"
-- Architectural decision on theme system, affects many components
-
-User: "Add a delete button to the user profile"
-- Seems simple but involves: where to place it, confirmation dialog, API call, error handling, state updates
-
-User: "Update the error handling in the API"
-- Affects multiple files, user should approve the approach
-
-### BAD - Don't use EnterPlanMode:
-User: "Fix the typo in the README"
-- Straightforward, no planning needed
-
-User: "Add a console.log to debug this function"
-- Simple, obvious implementation
-
-User: "What files handle routing?"
-- Research task, not implementation planning
-
-## Important Notes
-
-- This tool REQUIRES user approval - they must consent to entering plan mode
-- If unsure whether to use it, err on the side of planning - it's better to get alignment upfront than to redo work
-- Users appreciate being consulted before significant changes are made to their codebase
-</textarea>
+- El modo plan es de solo lectura por contrato. Estando dentro, el asistente no debe ejecutar `Edit`, `Write`, `NotebookEdit`, ni ningún comando de shell que mute estado. Usa únicamente `Read`, `Grep`, `Glob` y comandos `Bash` no destructivos.
+- No entres en modo plan para ediciones triviales de una línea, preguntas de investigación pura o tareas donde el usuario ya haya especificado el cambio con todo detalle. La sobrecarga perjudica más que ayuda.
+- Bajo el modo Auto, se desaconseja el modo plan salvo que el usuario lo solicite explícitamente — el modo Auto prefiere la acción sobre la planificación previa.
+- Usa el modo plan para reducir correcciones de rumbo en trabajo costoso. Un plan de cinco minutos suele ahorrar una hora de ediciones mal orientadas.
+- Una vez en modo plan, enfoca la investigación en las partes del sistema que realmente van a cambiar. Evita recorridos exhaustivos del repositorio sin relación con la tarea en curso.
+- El plan en sí debe escribirse en disco en la ruta que el harness espera para que `ExitPlanMode` pueda enviarlo. El plan debe contener rutas de archivos concretas, nombres de funciones y pasos de verificación, no intenciones vagas.
+- El usuario puede rechazar el plan y pedir revisiones. Itera dentro del modo plan hasta que el plan sea aceptado; solo entonces sal.

@@ -8,7 +8,7 @@ A continuación se presenta el índice clasificado de todas las herramientas.
 
 | Herramienta | Propósito |
 |-------------|-----------|
-| [Task](Tool-Task.md) | Iniciar un sub-agent (SubAgent) para manejar tareas complejas de múltiples pasos |
+| [Agent](Tool-Agent.md) | Iniciar un sub-agent (SubAgent) para manejar tareas complejas de múltiples pasos |
 | [TaskOutput](Tool-TaskOutput.md) | Obtener la salida de tareas en segundo plano |
 | [TaskStop](Tool-TaskStop.md) | Detener una tarea en segundo plano en ejecución |
 | [TaskCreate](Tool-TaskCreate.md) | Crear una entrada en la lista de tareas estructurada |

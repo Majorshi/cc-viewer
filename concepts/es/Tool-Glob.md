@@ -1,39 +1,35 @@
 # Glob
 
-## Definición
+Compara nombres de archivo contra un patrón glob y devuelve las rutas ordenadas por tiempo de modificación más reciente primero. Optimizado para localizar archivos rápidamente en bases de código de cualquier tamaño sin recurrir a `find` en el shell.
 
-Herramienta rápida de coincidencia de patrones de nombres de archivo, compatible con bases de código de cualquier tamaño. Devuelve rutas de archivos coincidentes ordenadas por tiempo de modificación.
+## Cuándo usar
+
+- Enumerar cada archivo de una extensión específica (por ejemplo, todos los archivos `*.ts` bajo `src`)
+- Descubrir archivos de configuración o fixtures por convención de nombre (`**/jest.config.*`, `**/*.test.tsx`)
+- Estrechar la superficie de búsqueda antes de ejecutar un `Grep` dirigido
+- Verificar si un archivo ya existe en un patrón conocido antes de llamar a `Write`
+- Encontrar archivos modificados recientemente apoyándose en el orden por tiempo de modificación
 
 ## Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `pattern` | string | Sí | Patrón glob (como `**/*.js`, `src/**/*.ts`) |
-| `path` | string | No | Directorio de búsqueda, por defecto el directorio de trabajo actual. No pasar "undefined" ni "null" |
+- `pattern` (string, obligatorio): La expresión glob a buscar. Admite `*` para comodines de un solo segmento, `**` para coincidencias recursivas y `{a,b}` para alternativas, por ejemplo `src/**/*.{ts,tsx}`.
+- `path` (string, opcional): Directorio en el que ejecutar la búsqueda. Debe ser una ruta de directorio válida cuando se proporcione. Omite el campo por completo para buscar en el directorio de trabajo actual. No pases las cadenas `"undefined"` ni `"null"`.
 
-## Casos de uso
+## Ejemplos
 
-**Adecuado para:**
-- Buscar archivos por patrón de nombre
-- Encontrar todos los archivos de un tipo específico (como todos los archivos `.tsx`)
-- Localizar archivos primero al buscar definiciones de clases específicas (como `class Foo`)
-- Se pueden lanzar múltiples llamadas Glob en paralelo en un solo mensaje
+### Ejemplo 1: Todos los archivos fuente TypeScript
+Llama a `Glob` con `pattern: "src/**/*.ts"`. El resultado es una lista ordenada por mtime, por lo que los archivos editados más recientemente aparecen primero, lo que es útil para enfocarse en puntos calientes.
 
-**No adecuado para:**
-- Buscar contenido de archivos — usar Grep
-- Exploración abierta que requiere múltiples rondas de búsqueda — usar Task (tipo Explore)
+### Ejemplo 2: Localizar un candidato de definición de clase
+Cuando sospechas que una clase vive en un archivo cuyo nombre no conoces, busca con `pattern: "**/*UserService*"` para estrechar los candidatos, luego sigue con `Read` o `Grep`.
+
+### Ejemplo 3: Descubrimiento en paralelo antes de una tarea mayor
+En un solo mensaje, emite múltiples llamadas `Glob` (por ejemplo una para `**/*.test.ts` y otra para `**/fixtures/**`) para que ambas se ejecuten en paralelo y sus resultados puedan correlacionarse.
 
 ## Notas
 
-- Soporta sintaxis glob estándar: `*` coincide con un nivel, `**` coincide con múltiples niveles, `{}` coincide con múltiples opciones
-- Los resultados se ordenan por tiempo de modificación
-- Se recomienda más que el comando `find` de Bash
-
-## Texto original
-
-<textarea readonly>- Fast file pattern matching tool that works with any codebase size
-- Supports glob patterns like "**/*.js" or "src/**/*.ts"
-- Returns matching file paths sorted by modification time
-- Use this tool when you need to find files by name patterns
-- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead
-- You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.</textarea>
+- Los resultados se ordenan por tiempo de modificación del archivo (más reciente primero), no alfabéticamente. Ordena en el lado cliente si necesitas un orden estable.
+- Los patrones son evaluados por la herramienta, no por el shell; no necesitas entrecomillarlos ni escaparlos como lo harías en la línea de comandos.
+- Para exploración abierta que requiere varias rondas de búsqueda y razonamiento, delega a una `Agent` con el tipo de agente Explore en lugar de encadenar muchas llamadas `Glob`.
+- Prefiere `Glob` sobre invocaciones de `find` o `ls` en `Bash` para descubrir nombres de archivo; maneja los permisos de forma consistente y devuelve salida estructurada.
+- Cuando buscas contenido dentro de archivos en lugar de nombres de archivo, usa `Grep` en su lugar.

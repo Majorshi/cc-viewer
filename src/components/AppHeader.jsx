@@ -2,7 +2,7 @@ import React from 'react';
 import { Space, Tag, Button, Dropdown, Popover, Modal, Collapse, Drawer, Switch, Radio, Tabs, Spin, Input, Table, Select, message } from 'antd';
 import { MessageOutlined, FileTextOutlined, ImportOutlined, DashboardOutlined, ExportOutlined, DownloadOutlined, SettingOutlined, BarChartOutlined, CodeOutlined, CopyOutlined, ApiOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined, CloudDownloadOutlined, SwapOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { QRCodeCanvas } from 'qrcode.react';
-import { formatTokenCount, computeTokenStats, computeCacheRebuildStats, computeToolUsageStats, computeSkillUsageStats, getModelMaxTokens, extractCachedContent } from '../utils/helpers';
+import { formatTokenCount, computeTokenStats, computeCacheRebuildStats, computeToolUsageStats, computeSkillUsageStats, getModelMaxTokens, extractCachedContent, parseCachedTools } from '../utils/helpers';
 import { isSystemText, classifyUserContent, isMainAgent } from '../utils/contentFilter';
 import { classifyRequest } from '../utils/requestType';
 import { resolveTeammateNames } from '../utils/contentFilter';
@@ -536,7 +536,7 @@ class AppHeader extends React.Component {
     const { requests = [], serverCachedContent } = this.props;
     const cached = serverCachedContent || extractCachedContent(requests);
 
-    // 缓存最后一次有效的 token 显示值，避免闪烁
+    // 记录最后一次有效的 token / ctx（原展示已移除，保留以便将来恢复）
     if (cached && (cached.cacheCreateTokens > 0 || cached.cacheReadTokens > 0)) {
       this._lastCachedTokens = { cacheCreateTokens: cached.cacheCreateTokens, cacheReadTokens: cached.cacheReadTokens };
     }
@@ -544,111 +544,71 @@ class AppHeader extends React.Component {
       this._lastContextPercent = contextPercent;
     }
 
-    if (!cached || (cached.system.length === 0 && cached.messages.length === 0 && cached.tools.length === 0)) {
-      return <div className={styles.cachePopoverEmpty}>{t('ui.noCachedContent')}</div>;
+    // 解析 tools 并缓存：tools 数组引用未变时复用上次解析结果，避免 200 条量级重复 split/regex。
+    const toolsArr = Array.isArray(cached?.tools) ? cached.tools : null;
+    let parsed;
+    if (toolsArr === this._lastToolsRef && this._lastParsedTools) {
+      parsed = this._lastParsedTools;
+    } else {
+      parsed = parseCachedTools(toolsArr);
+      this._lastToolsRef = toolsArr;
+      this._lastParsedTools = parsed;
     }
+    const { builtin, mcpByServer } = parsed;
+    const hasBuiltin = builtin.length > 0;
+    const hasMcp = mcpByServer.size > 0;
 
-    const renderSection = (title, items, blockClass, sectionKey) => {
-      if (items.length === 0) return null;
-      const isMessages = title === t('ui.messages');
-      const sectionState = (this.state._cacheSectionCollapsed || {})[sectionKey];
-      const collapsed = sectionState !== undefined ? !!sectionState : true;
-      const toggleCollapse = () => this.setState(prev => ({
+    // 内置工具 chip：若有对应 Tool-<name>.md 文档（由 ConceptHelp 内部白名单校验），
+    // 点击直接打开 md modal；无文档则退化为纯展示 chip（ConceptHelp children fallback）。
+    // MCP 工具 chip：暂无对应文档，维持纯展示 + title hover 预览。
+    const renderBuiltinChip = ({ name, description }) => {
+      const title = [name, description].filter(Boolean).join('\n\n');
+      const chip = <span className={styles.cacheToolChip} title={title}>{name}</span>;
+      return <ConceptHelp key={name} doc={`Tool-${name}`}>{chip}</ConceptHelp>;
+    };
+    const renderMcpChip = ({ name, fullName, description }) => {
+      const title = [fullName, description].filter(Boolean).join('\n\n');
+      return (
+        <span key={fullName} className={styles.cacheToolChip} title={title}>{name}</span>
+      );
+    };
+
+    const renderGroup = (sectionKey, titleKey, count, defaultCollapsed, body) => {
+      const state = (this.state._cacheSectionCollapsed || {})[sectionKey];
+      const collapsed = state !== undefined ? !!state : defaultCollapsed;
+      const toggle = () => this.setState(prev => ({
         _cacheSectionCollapsed: { ...(prev._cacheSectionCollapsed || {}), [sectionKey]: !collapsed },
       }));
       return (
         <div className={styles.cacheSection}>
-          <button type="button" className={styles.cacheSectionTitle} onClick={toggleCollapse} aria-expanded={!collapsed}>
+          <button type="button" className={styles.cacheSectionTitle} onClick={toggle} aria-expanded={!collapsed}>
             <span className={styles.cacheSectionArrow}>{collapsed ? '▶' : '▼'}</span>
-            {title} ({items.length})
+            {t(titleKey)} ({count})
           </button>
-          {!collapsed && items.map((text, i) => {
-            const extraProps = isMessages ? { 'data-msg-idx': i } : {};
-            let cls = blockClass || styles.cacheCodeBlock;
-            const isHl = isMessages && i === this.state.cacheHighlightIdx;
-            if (isHl) {
-              cls += ' ' + (this.state.cacheHighlightFading ? styles.cacheBlockHighlightFading : styles.cacheBlockHighlight);
-            }
-            return (
-              <pre key={i} className={cls} {...extraProps} style={isHl ? { position: 'relative' } : undefined}>
-                {isHl && (
-                  <svg className={`${styles.cacheBorderSvg}${this.state.cacheHighlightFading ? ' ' + styles.cacheBorderSvgFading : ''}`} preserveAspectRatio="none">
-                    <rect x="0.5" y="0.5" width="calc(100% - 1px)" height="calc(100% - 1px)" rx="4" ry="4"
-                      fill="none" stroke="#1668dc" strokeWidth="1" strokeDasharray="6 4"
-                      className={styles.cacheBorderRect} />
-                  </svg>
-                )}
-                {text}
-              </pre>
-            );
-          })}
+          {!collapsed && body}
         </div>
       );
     };
 
-    const buildPlainText = () => {
-      const parts = [];
-      if (cached.tools.length > 0) {
-        parts.push(`=== ${t('ui.tools')} (${cached.tools.length}) ===`);
-        cached.tools.forEach(text => parts.push(text));
-      }
-      if (cached.system.length > 0) {
-        parts.push(`\n=== ${t('ui.systemPrompt')} (${cached.system.length}) ===`);
-        cached.system.forEach(text => parts.push(text));
-      }
-      if (cached.messages.length > 0) {
-        parts.push(`\n=== ${t('ui.messages')} (${cached.messages.length}) ===`);
-        cached.messages.forEach(text => parts.push(text));
-      }
-      return parts.join('\n\n');
-    };
+    const builtinBody = (
+      <div className={styles.toolChipGrid}>{builtin.map(renderBuiltinChip)}</div>
+    );
 
-    const userPrompts = cached.messages
-      .map((text, i) => ({ text, msgIdx: i }))
-      .filter(({ text }) => text.startsWith('[user]'))
-      .map(({ text, msgIdx }) => {
-        const raw = text.replace(/^\[user\]\s*/, '').trim();
-        // 与 extractUserTexts 对齐：先对整体文本做 isSystemText 检查
-        if (!raw || isSystemText(raw)) return { cleaned: '', msgIdx };
-        const segments = AppHeader.parseSegments(raw);
-        const cleaned = segments
-          .filter(s => s.type === 'text')
-          .map(s => s.content.trim())
-          .filter(s => s && !isSystemText(s))
-          .join(' ')
-          .trim();
-        return { cleaned, msgIdx };
-      })
-      .filter(({ cleaned }) => {
-        if (!cleaned) return false;
-        if (/Implement the following plan:/i.test(cleaned)) return false;
-        return true;
-      });
-
-    const userPromptNavList = userPrompts.length > 0 ? (
-      <div className={styles.cacheNavList}>
-        {userPrompts.map(({ cleaned, msgIdx }) => (
-          <div key={msgIdx} className={styles.cacheNavItem} onClick={() => this.scrollToCacheMsg(msgIdx)}>
-            {cleaned}
+    const mcpBody = (
+      <div className={styles.toolChipGridVertical}>
+        {Array.from(mcpByServer.entries()).map(([server, tools]) => (
+          <div key={server} className={styles.mcpServerGroup}>
+            <div className={styles.mcpServerName}>{server} ({tools.length})</div>
+            <div className={styles.toolChipGrid}>{tools.map(renderMcpChip)}</div>
           </div>
         ))}
       </div>
-    ) : null;
+    );
 
     return (
       <div className={styles.cachePopover}>
         <div className={styles.cachePopoverHeader}>
           <div className={styles.cachePopoverTitle}>
-            {t('ui.cachedContentTitle')}
-            <ConceptHelp doc="KVCacheContent" />
-            <CopyOutlined
-              className={styles.cacheCopyBtn}
-              onClick={() => {
-                navigator.clipboard.writeText(buildPlainText()).then(() => {
-                  message.success(t('ui.copied'));
-                }).catch(() => {});
-              }}
-            />
             <span className={styles.cacheCalibrationLabel}>{t('ui.calibrationModelLabel')}</span>
             <Select
               size="small"
@@ -660,37 +620,12 @@ class AppHeader extends React.Component {
             />
           </div>
         </div>
-        {(() => {
-          const hasTokens = cached.cacheCreateTokens > 0 || cached.cacheReadTokens > 0;
-          const displayTokens = hasTokens ? cached : this._lastCachedTokens;
-          const displayCtx = contextPercent > 0 ? contextPercent : this._lastContextPercent || 0;
-          return (displayTokens || userPromptNavList) ? (
-          <div className={styles.cacheTokenInfo}>
-            {displayTokens && <>
-              {t('ui.tokens')}: <span className={styles.cacheWriteToken}>write {formatTokenCount(displayTokens.cacheCreateTokens)}</span>
-              {' / '}
-              <span className={styles.cacheReadToken}>read {formatTokenCount(displayTokens.cacheReadTokens)}</span>
-              {displayCtx > 0 && <span className={styles.cacheCtxPercent}>(ctx:{displayCtx}%)</span>}
-            </>}
-            {userPromptNavList && (
-              <Popover content={userPromptNavList} trigger="hover" placement="left">
-                <span className={styles.cacheNavBtn}>{t('ui.userPromptNav')}</span>
-              </Popover>
-            )}
+        {(hasBuiltin || hasMcp) && (
+          <div className={styles.cacheScrollArea}>
+            {hasBuiltin && renderGroup('tools_builtin', 'ui.builtinTools', builtin.length, false, builtinBody)}
+            {hasMcp && renderGroup('tools_mcp', 'ui.mcpTools', Array.from(mcpByServer.values()).reduce((n, arr) => n + arr.length, 0), true, mcpBody)}
           </div>
-          ) : null;
-        })()}
-        <div className={styles.cacheScrollArea} ref={el => {
-          this._cacheScrollEl = el;
-          if (el && !this._cacheScrollInited) {
-            this._cacheScrollInited = true;
-            requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-          }
-        }}>
-          {renderSection(t('ui.tools'), cached.tools, undefined, 'tools')}
-          {renderSection(t('ui.systemPrompt'), cached.system, styles.cacheCodeBlockSystem, 'system')}
-          {renderSection(t('ui.messages'), cached.messages, undefined, 'messages')}
-        </div>
+        )}
       </div>
     );
   }

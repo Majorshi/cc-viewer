@@ -16,6 +16,28 @@
   animation: fadeIn 0.15s ease forwards;
 }
 
+/* 不可见 hover 垫片：把 actionBar 的 DOM 边界竖向/横向扩出去，
+   用户从气泡外侧斜向或垂直靠近下载按钮时鼠标仍在 wrapper 子树内
+   （actionBar 是 wrapper 的子节点），wrapper 的 mouseleave 不会
+   被触发，hovered state 稳定保持，按钮不会提前 fade out。
+   关键：用 absolute 定位脱离 flex 流，pad 不占布局高度，按钮
+   保持贴 actionBar 顶部（top:0）原位不被下推；宽 48px 比按钮
+   24px 多向右溢出 24px 作为水平 hover 桥；上下各 60px 作为
+   竖向 hover 桥。actionBar 仅在 hovered=true 时 render，不会
+   干扰非激活气泡。 */
+.hoverPad {
+  position: absolute;
+  left: 8px;
+  width: 48px;
+  height: 60px;
+}
+.hoverPadTop {
+  bottom: 100%;
+}
+.hoverPadBottom {
+  top: 100%;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

@@ -1,56 +1,41 @@
 # Read
 
-## Definición
+Carga el contenido de un solo archivo del sistema de archivos local. Soporta texto plano, código fuente, imágenes, PDFs y notebooks de Jupyter, devolviendo resultados con números de línea basados en 1 al estilo `cat -n`.
 
-Lee el contenido de archivos del sistema de archivos local. Soporta archivos de texto, imágenes, PDF y Jupyter notebook.
+## Cuándo usar
+
+- Leer un archivo fuente en una ruta conocida antes de editar o analizar
+- Inspeccionar archivos de configuración, lockfiles, registros o artefactos generados
+- Ver capturas de pantalla o diagramas que el usuario pegó en la conversación
+- Extraer un rango específico de páginas de un manual PDF largo
+- Abrir un notebook `.ipynb` para revisar celdas de código, markdown y salidas de celdas juntas
 
 ## Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `file_path` | string | Sí | Ruta absoluta del archivo |
-| `offset` | number | No | Número de línea inicial (para lectura segmentada de archivos grandes) |
-| `limit` | number | No | Número de líneas a leer (para lectura segmentada de archivos grandes) |
-| `pages` | string | No | Rango de páginas PDF (como "1-5", "3", "10-20"), solo aplicable a PDF |
+- `file_path` (string, obligatorio): Ruta absoluta al archivo objetivo. Las rutas relativas son rechazadas.
+- `offset` (integer, opcional): Número de línea basado en 1 desde el que empezar a leer. Útil para archivos grandes cuando se combina con `limit`.
+- `limit` (integer, opcional): Máximo número de líneas a devolver empezando en `offset`. Por defecto 2000 líneas desde la parte superior del archivo cuando se omite.
+- `pages` (string, opcional): Rango de páginas para archivos PDF, por ejemplo `"1-5"`, `"3"` o `"10-20"`. Obligatorio para PDFs de más de 10 páginas; máximo 20 páginas por solicitud.
 
-## Casos de uso
+## Ejemplos
 
-**Adecuado para:**
-- Leer archivos de código, archivos de configuración y otros archivos de texto
-- Ver archivos de imagen (Claude es un modelo multimodal)
-- Leer documentos PDF
-- Leer Jupyter notebooks (devuelve todas las celdas y salidas)
-- Leer múltiples archivos en paralelo para obtener contexto
+### Ejemplo 1: Leer un archivo pequeño completo
+Llama a `Read` solo con `file_path` establecido a `/Users/me/project/src/index.ts`. Se devuelven hasta 2000 líneas con números de línea, lo que suele ser suficiente para el contexto de edición.
 
-**No adecuado para:**
-- Leer directorios — usar el comando `ls` de Bash
-- Exploración abierta de la base de código — usar Task (tipo Explore)
+### Ejemplo 2: Paginar un registro largo
+Usa `offset: 5001` y `limit: 500` en un archivo de registro de varios miles de líneas para recuperar una ventana estrecha sin desperdiciar tokens de contexto.
+
+### Ejemplo 3: Extraer páginas específicas de PDF
+Para un PDF de 120 páginas en `/tmp/spec.pdf`, establece `pages: "8-15"` para extraer solo el capítulo que necesitas. Omitir `pages` en un PDF grande produce un error.
+
+### Ejemplo 4: Ver una imagen
+Pasa la ruta absoluta de una captura de pantalla PNG o JPG. La imagen se renderiza visualmente para que Claude Code pueda razonar directamente sobre ella.
 
 ## Notas
 
-- La ruta debe ser absoluta, no relativa
-- Por defecto lee las primeras 2000 líneas del archivo
-- Las líneas que excedan 2000 caracteres serán truncadas
-- La salida usa formato `cat -n`, los números de línea comienzan en 1
-- Los PDF grandes (más de 10 páginas) deben especificar el parámetro `pages`, máximo 20 páginas por vez
-- Leer un archivo inexistente devuelve un error (no se bloquea)
-- Se pueden hacer múltiples llamadas Read en paralelo en un solo mensaje
-
-## Texto original
-
-<textarea readonly>Reads a file from the local filesystem. You can access any file directly by using this tool.
-Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
-
-Usage:
-- The file_path parameter must be an absolute path, not a relative path
-- By default, it reads up to 2000 lines starting from the beginning of the file
-- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
-- Any lines longer than 2000 characters will be truncated
-- Results are returned using cat -n format, with line numbers starting at 1
-- This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.
-- This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
-- This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
-- This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.
-- You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful files in parallel.
-- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths.
-- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.</textarea>
+- Siempre prefiere rutas absolutas. Si el usuario proporciona una, confía en ella tal como está.
+- Las líneas de más de 2000 caracteres se truncan; trata el contenido devuelto como posiblemente recortado para datos extremadamente anchos.
+- ¿Leyendo varios archivos independientes? Emite varias llamadas `Read` en la misma respuesta para que se ejecuten en paralelo.
+- `Read` no puede listar directorios. Usa una llamada `ls` con `Bash` o la herramienta `Glob` en su lugar.
+- Leer un archivo existente pero vacío devuelve un recordatorio del sistema en lugar de los bytes del archivo, así que maneja esa señal explícitamente.
+- Un `Read` exitoso es requerido antes de poder usar `Edit` en el mismo archivo en la sesión actual.

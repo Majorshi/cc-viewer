@@ -1,41 +1,68 @@
 # SendMessage
 
-## Definition
+Leverer en besked fra ét teammedlem til et andet inden for et aktivt team, eller broadcaster til alle holdkammerater på én gang. Dette er den eneste kanal, holdkammerater kan høre — alt, der skrives til normalt tekstoutput, er usynligt for dem.
 
-Sender beskeder mellem agenter inden for et team. Bruges til direkte kommunikation, broadcasting og protokolbeskeder (shutdown-anmodninger/-svar, plangodkendelse).
+## Hvornår skal den bruges
+
+- Tildele en opgave eller overdrage et delproblem til en navngivet holdkammerat under teamsamarbejde.
+- Anmode om status, mellemresultater eller en kodegennemgang fra en anden agent.
+- Broadcaste en beslutning, en delt begrænsning eller en nedlukningsbesked til hele teamet via `*`.
+- Svare på en protokolforespørgsel som en nedlukningsanmodning eller en plangodkendelsesanmodning fra teamlederen.
+- Afslutte cirklen ved slutningen af en delegeret opgave, så lederen kan markere posten som fuldført.
 
 ## Parametre
 
-| Parameter | Type | Påkrævet | Beskrivelse |
-|-----------|------|----------|-------------|
-| `to` | string | Ja | Modtager: teammedlemmets navn, eller `"*"` for broadcast til alle |
-| `message` | string / object | Ja | Ren tekstbesked eller struktureret protokolobjekt |
-| `summary` | string | Nej | En forhåndsvisning på 5-10 ord vist i brugerfladen |
+- `to` (string, påkrævet): Målholdkammeratens `name`, som registreret i teamet, eller `*` for at broadcaste til alle holdkammerater på én gang.
+- `message` (string eller object, påkrævet): Almindelig tekst til normal kommunikation, eller et struktureret objekt til protokolsvar som `shutdown_response` og `plan_approval_response`.
+- `summary` (string, valgfri): En forhåndsvisning på 5-10 ord, der vises i team-aktivitetsloggen for almindelige tekstbeskeder. Påkrævet for lange strengbeskeder; ignoreres, når `message` er et protokolobjekt.
 
-## Beskedtyper
+## Eksempler
 
-### Ren tekst
-Direkte beskeder mellem teammedlemmer til koordinering, statusopdateringer og opgavediskussioner.
+### Eksempel 1: Direkte opgaveoverdragelse
 
-### Shutdown-anmodning
-Beder et teammedlem om at lukke ned pænt: `{ type: "shutdown_request", reason: "..." }`
+```
+SendMessage(
+  to="db-lead",
+  message="Please audit prisma/schema.prisma and list any model missing createdAt/updatedAt timestamps. Reply when done.",
+  summary="Audit schema for missing timestamps"
+)
+```
 
-### Shutdown-svar
-Teammedlem godkender eller afviser shutdown: `{ type: "shutdown_response", approve: true/false }`
+### Eksempel 2: Broadcast en delt begrænsning
 
-### Plangodkendelsessvar
-Godkender eller afviser et teammedlems plan: `{ type: "plan_approval_response", approve: true/false }`
+```
+SendMessage(
+  to="*",
+  message="Reminder: do not touch files under legacy/ — that subtree is frozen until the migration PR lands.",
+  summary="Freeze legacy/ during migration"
+)
+```
 
-## Broadcast vs. direkte
+### Eksempel 3: Protokolsvar
 
-- **Direkte** (`to: "teammedlem-navn"`): Send til et bestemt teammedlem — foretrukket til de fleste kommunikationer
-- **Broadcast** (`to: "*"`): Send til alle teammedlemmer — brug sparsomt, kun til kritiske teamdækkende meddelelser
+Svar på en nedlukningsanmodning fra lederen ved hjælp af en struktureret besked:
 
-## Relaterede værktøjer
+```
+SendMessage(
+  to="leader",
+  message={ "type": "shutdown_response", "ready": true, "final_report": "All assigned diff chunks committed on branch refactor-crew/db-lead." }
+)
+```
 
-| Værktøj | Formål |
-|---------|--------|
-| `TeamCreate` | Opret et nyt team |
-| `TeamDelete` | Fjern team når det er færdigt |
-| `Agent` | Start teammedlemmer der tilslutter sig teamet |
-| `TaskCreate` / `TaskUpdate` / `TaskList` | Administrer den delte opgaveliste |
+### Eksempel 4: Plangodkendelsessvar
+
+```
+SendMessage(
+  to="leader",
+  message={ "type": "plan_approval_response", "approved": true, "notes": "LGTM, but please split step 4 into migration + backfill." }
+)
+```
+
+## Noter
+
+- Dit almindelige assistenttekstoutput sendes IKKE til holdkammerater. Hvis du vil have en anden agent til at se noget, skal det gå gennem `SendMessage`. Dette er den mest almindelige fejl i team-workflows.
+- Broadcast (`to: "*"`) er dyrt — det vækker hver holdkammerat og forbruger deres kontekst. Reservér det til meddelelser, der reelt påvirker alle. Foretræk målrettede forsendelser.
+- Hold beskeder kortfattede og handlingsorienterede. Medtag filstier, begrænsninger og det forventede svarformat, modtageren har brug for; husk, de ikke deler hukommelse med dig.
+- Protokolbeskedobjekter (`shutdown_response`, `plan_approval_response`) har faste former. Bland ikke protokolfelter ind i almindelige tekstbeskeder eller omvendt.
+- Beskeder er asynkrone. Modtageren modtager din på sin næste runde; antag ikke, at de har læst eller handlet på den, før de svarer.
+- En velskrevet `summary` gør team-aktivitetsloggen scanbar for lederen — behandl den som en commit-emnelinje.

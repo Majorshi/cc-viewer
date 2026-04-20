@@ -9,23 +9,26 @@ import styles from './ConceptHelp.module.css';
 const KNOWN_DOCS = new Set([
   'Tool-Bash', 'Tool-Read', 'Tool-Edit', 'Tool-Write', 'Tool-Glob', 'Tool-Grep',
   'Tool-NotebookEdit', 'Tool-WebFetch', 'Tool-WebSearch',
-  'Tool-Task', 'Tool-Agent', 'Tool-TaskOutput', 'Tool-TaskStop',
+  'Tool-Agent', 'Tool-TaskOutput', 'Tool-TaskStop',
   'Tool-TaskCreate', 'Tool-TaskGet', 'Tool-TaskUpdate', 'Tool-TaskList',
   'Tool-TeamCreate', 'Tool-TeamDelete', 'Tool-SendMessage',
   'SubAgent-Search',
   'Tool-EnterPlanMode', 'Tool-ExitPlanMode',
   'Tool-AskUserQuestion', 'Tool-Skill',
-  'Tool-getDiagnostics', 'Tool-executeCode', 'Tool-EnterWorktree',
+  'Tool-getDiagnostics', 'Tool-executeCode', 'Tool-EnterWorktree', 'Tool-ExitWorktree',
+  'Tool-CronCreate', 'Tool-CronDelete', 'Tool-CronList',
+  'Tool-Monitor', 'Tool-PushNotification', 'Tool-RemoteTrigger', 'Tool-ScheduleWakeup',
   'MainAgent', 'Teammate', 'BodyFields', 'ResponseFields', 'Tools', 'ToolsFirst', 'CacheRebuild', 'BodyDiffJSON', 'TranslateContextPollution', 'KVCacheContent', 'ProxySwitch', 'GlobalSettings', 'QRCode', 'UltraPlan', 'CustomUltraplanExpert',
 ]);
 
-export default function ConceptHelp({ doc, zIndex }) {
+export default function ConceptHelp({ doc, zIndex, children }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [html, setHtml] = useState('');
   const [title, setTitle] = useState('');
 
-  if (!doc || !KNOWN_DOCS.has(doc)) return null;
+  // 未知 doc：若有 children，原样返回（chip 等调用方退化为纯展示）；否则不渲染
+  if (!doc || !KNOWN_DOCS.has(doc)) return children || null;
 
   const loadDoc = useCallback(async () => {
     setOpen(true);
@@ -64,13 +67,20 @@ export default function ConceptHelp({ doc, zIndex }) {
     content: { padding: '12px 20px' },
   };
 
+  const triggerHandlers = {
+    onClick: (e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); loadDoc(); },
+    onMouseDown: (e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); },
+    onPointerDown: (e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); },
+  };
+
   return (
     <>
-      <span className={styles.helpBtn}
-        onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); loadDoc(); }}
-        onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-        onPointerDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-      >?</span>
+      {children
+        ? React.cloneElement(children, {
+            ...triggerHandlers,
+            style: { cursor: 'pointer', ...(children.props.style || {}) },
+          })
+        : <span className={styles.helpBtn} {...triggerHandlers}>?</span>}
         <Modal
           title={title}
           open={open}

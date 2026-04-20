@@ -1,39 +1,35 @@
 # Write
 
-## Definición
+Crea un archivo nuevo o reemplaza completamente el contenido de uno existente en el sistema de archivos local. Como reemplaza todo en la ruta objetivo, debe reservarse para creación genuina o reescrituras completas intencionadas.
 
-Escribe contenido en el sistema de archivos local. Si el archivo ya existe, lo sobrescribe.
+## Cuándo usar
+
+- Crear un archivo fuente, prueba o configuración nuevos que aún no existen
+- Generar un fixture, snapshot o archivo de datos nuevo desde cero
+- Realizar una reescritura completa donde un `Edit` incremental sería más complejo que empezar de nuevo
+- Emitir un artefacto solicitado como un esquema, migración o script de compilación que el usuario pidió explícitamente producir
 
 ## Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `file_path` | string | Sí | Ruta absoluta del archivo (debe ser ruta absoluta) |
-| `content` | string | Sí | Contenido a escribir |
+- `file_path` (string, obligatorio): Ruta absoluta del archivo a escribir. Los directorios padre deben existir ya.
+- `content` (string, obligatorio): El texto completo a escribir en el archivo. Este se convierte en el cuerpo completo del archivo.
 
-## Casos de uso
+## Ejemplos
 
-**Adecuado para:**
-- Crear archivos nuevos
-- Cuando se necesita reescribir completamente el contenido de un archivo
+### Ejemplo 1: Crear un módulo helper nuevo
+Llama a `Write` con `file_path: "/Users/me/app/src/utils/slugify.ts"` y proporciona la implementación como `content`. Usa esto solo después de verificar que el archivo no existe ya.
 
-**No adecuado para:**
-- Modificar contenido parcial de un archivo — usar Edit
-- No se deben crear proactivamente archivos de documentación (*.md) o README, a menos que el usuario lo solicite explícitamente
+### Ejemplo 2: Regenerar un artefacto derivado
+Tras cambiar la fuente del esquema, reescribe `/Users/me/app/generated/schema.json` en una sola llamada `Write` usando el JSON recién generado como `content`.
+
+### Ejemplo 3: Reemplazar un archivo de fixture pequeño
+Para un fixture de prueba desechable donde cada línea cambia, `Write` puede ser más claro que una secuencia de llamadas `Edit`. Lee el archivo primero, confirma el ámbito y luego sobrescribe.
 
 ## Notas
 
-- Si el archivo de destino ya existe, se debe leer primero con Read, de lo contrario fallará
-- Sobrescribe todo el contenido del archivo existente
-- Preferir usar Edit para editar archivos existentes, Write solo para crear archivos nuevos o reescrituras completas
-
-## Texto original
-
-<textarea readonly>Writes a file to the local filesystem.
-
-Usage:
-- This tool will overwrite the existing file if there is one at the provided path.
-- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.
-- Prefer the Edit tool for modifying existing files — it only sends the diff. Only use this tool to create new files or for complete rewrites.
-- NEVER create documentation files (*.md) or README files unless explicitly requested by the User.
-- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.</textarea>
+- Antes de sobrescribir un archivo existente, debes llamar a `Read` sobre él en la sesión actual. `Write` se niega a aplastar contenido no visto.
+- Prefiere `Edit` para cualquier cambio que toque solo parte de un archivo. `Edit` envía solo el diff, lo cual es más rápido, más seguro y más fácil de revisar.
+- No crees proactivamente documentación Markdown, archivos `README.md` o changelogs a menos que el usuario los solicite explícitamente.
+- No añadas emojis, texto de marketing o banners decorativos a menos que el usuario pida ese estilo.
+- Verifica primero que el directorio padre existe con una llamada `ls` con `Bash`; `Write` no crea carpetas intermedias.
+- Proporciona el contenido exactamente como quieres que se persista; no hay plantillas ni postprocesado.

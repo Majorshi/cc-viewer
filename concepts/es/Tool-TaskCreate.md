@@ -1,78 +1,56 @@
 # TaskCreate
 
-## Definición
+Crea una nueva tarea en la lista de tareas del equipo actual (o la lista de tareas de la sesión cuando no hay equipo activo). Úsala para capturar elementos de trabajo que deban ser rastreados, delegados o revisados más tarde.
 
-Crea entradas estructuradas en la lista de tareas para rastrear el progreso, organizar tareas complejas y mostrar el avance del trabajo al usuario.
+## Cuándo usar
+
+- El usuario describe un trabajo de varios pasos que se beneficia de un seguimiento explícito.
+- Estás dividiendo una solicitud grande en unidades más pequeñas completables por separado.
+- Se descubre un seguimiento a mitad de tarea y no debe olvidarse.
+- Necesitas un registro duradero de intención antes de entregar trabajo a un compañero o subagente.
+- Estás operando en modo plan y quieres que cada paso del plan esté representado como una tarea concreta.
+
+Omite `TaskCreate` para acciones triviales de un solo paso, conversación pura o cualquier cosa completable en dos o tres llamadas directas de herramientas.
 
 ## Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `subject` | string | Sí | Título breve de la tarea, usar forma imperativa (como "Fix authentication bug") |
-| `description` | string | Sí | Descripción detallada, incluyendo contexto y criterios de aceptación |
-| `activeForm` | string | No | Texto en gerundio mostrado cuando está en progreso (como "Fixing authentication bug") |
-| `metadata` | object | No | Metadatos arbitrarios adjuntos a la tarea |
+- `subject` (string, obligatorio): Título corto en imperativo, p. ej. `Fix login redirect on Safari`. Mantenlo en torno a ochenta caracteres o menos.
+- `description` (string, obligatorio): Contexto detallado — el problema, las restricciones, los criterios de aceptación y cualquier archivo o enlace que un lector futuro necesite. Escribe como si un compañero fuera a retomar esto en frío.
+- `activeForm` (string, opcional): Texto del indicador en presente continuo mostrado mientras la tarea está `in_progress`, p. ej. `Fixing login redirect on Safari`. Refleja el `subject` pero en forma -ing/-ndo.
+- `metadata` (object, opcional): Datos estructurados arbitrarios adjuntos a la tarea. Usos comunes: etiquetas, pistas de prioridad, IDs de tickets externos o configuración específica del agente.
 
-## Casos de uso
+Las tareas recién creadas siempre comienzan con estado `pending` y sin propietario. Las dependencias (`blocks`, `blockedBy`) no se establecen en el momento de creación — aplícalas después con `TaskUpdate`.
 
-**Adecuado para:**
-- Tareas complejas de múltiples pasos (más de 3 pasos)
-- El usuario proporcionó múltiples elementos pendientes
-- Rastrear trabajo en modo de planificación
-- El usuario solicita explícitamente usar una lista de tareas
+## Ejemplos
 
-**No adecuado para:**
-- Una sola tarea simple
-- Operaciones simples de 3 pasos o menos
-- Consultas puramente conversacionales o informativas
+### Ejemplo 1
+
+Capturar un reporte de bug que el usuario acaba de enviar.
+
+```
+TaskCreate(
+  subject: "Repair broken PDF export on Windows",
+  description: "Users on Windows 11 report the export button produces a 0-byte file. Reproduce with sample doc in test/fixtures/export/, then fix the code path in src/export/pdf.ts. Acceptance: export writes a valid PDF and the existing export test suite passes.",
+  activeForm: "Repairing broken PDF export on Windows"
+)
+```
+
+### Ejemplo 2
+
+Dividir un épico en unidades rastreadas al inicio de una sesión.
+
+```
+TaskCreate(
+  subject: "Draft migration plan for auth service",
+  description: "Produce a written plan covering rollout stages, rollback strategy, and monitoring. Output: docs/auth-migration.md.",
+  activeForm: "Drafting migration plan for auth service",
+  metadata: { "priority": "P1", "linearId": "AUTH-214" }
+)
+```
 
 ## Notas
 
-- Todas las tareas nuevas tienen estado inicial `pending`
-- `subject` usa forma imperativa ("Run tests"), `activeForm` usa gerundio ("Running tests")
-- Después de crear la tarea, se pueden establecer relaciones de dependencia (blocks/blockedBy) mediante TaskUpdate
-- Antes de crear, se debe llamar a TaskList para verificar si hay tareas duplicadas
-
-## Texto original
-
-<textarea readonly>Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
-It also helps the user understand the progress of the task and overall progress of their requests.
-
-## When to Use This Tool
-
-Use this tool proactively in these scenarios:
-
-- Complex multi-step tasks - When a task requires 3 or more distinct steps or actions
-- Non-trivial and complex tasks - Tasks that require careful planning or multiple operations
-- Plan mode - When using plan mode, create a task list to track the work
-- User explicitly requests todo list - When the user directly asks you to use the todo list
-- User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)
-- After receiving new instructions - Immediately capture user requirements as tasks
-- When you start working on a task - Mark it as in_progress BEFORE beginning work
-- After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation
-
-## When NOT to Use This Tool
-
-Skip using this tool when:
-- There is only a single, straightforward task
-- The task is trivial and tracking it provides no organizational benefit
-- The task can be completed in less than 3 trivial steps
-- The task is purely conversational or informational
-
-NOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.
-
-## Task Fields
-
-- **subject**: A brief, actionable title in imperative form (e.g., "Fix authentication bug in login flow")
-- **description**: Detailed description of what needs to be done, including context and acceptance criteria
-- **activeForm**: Present continuous form shown in spinner when task is in_progress (e.g., "Fixing authentication bug"). This is displayed to the user while you work on the task.
-
-**IMPORTANT**: Always provide activeForm when creating tasks. The subject should be imperative ("Run tests") while activeForm should be present continuous ("Running tests"). All tasks are created with status `pending`.
-
-## Tips
-
-- Create tasks with clear, specific subjects that describe the outcome
-- Include enough detail in the description for another agent to understand and complete the task
-- After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
-- Check TaskList first to avoid creating duplicate tasks
-</textarea>
+- Escribe el `subject` en voz imperativa y el `activeForm` en presente continuo para que la interfaz se lea con naturalidad cuando la tarea transicione a `in_progress`.
+- Llama a `TaskList` antes de crear para evitar duplicados — la lista del equipo se comparte con compañeros y subagentes.
+- No incluyas secretos o credenciales en `description` o `metadata`; los registros de tareas son visibles para cualquiera con acceso al equipo.
+- Tras la creación, mueve la tarea a través de su ciclo de vida con `TaskUpdate`. No dejes trabajo abandonado silenciosamente en `in_progress`.

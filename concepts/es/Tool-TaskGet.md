@@ -1,56 +1,47 @@
 # TaskGet
 
-## Definición
+Recupera el registro completo de una sola tarea por ID, incluyendo su descripción, estado actual, propietario, metadatos y aristas de dependencia. Úsala cuando el resumen devuelto por `TaskList` no sea suficiente para actuar sobre la tarea.
 
-Obtiene los detalles completos de una tarea mediante su ID.
+## Cuándo usar
+
+- Tomaste una tarea de `TaskList` y necesitas la descripción completa antes de empezar a trabajar.
+- Estás a punto de marcar una tarea como `completed` y quieres revisar de nuevo los criterios de aceptación.
+- Necesitas inspeccionar qué tareas bloquea esta (`blocks`) o qué tareas la bloquean (`blockedBy`) para decidir el siguiente movimiento.
+- Estás investigando el historial — quién la tiene asignada, qué metadatos se adjuntaron, cuándo cambió de estado.
+- Un compañero o una sesión anterior referenció un ID de tarea y necesitas el contexto.
+
+Prefiere `TaskList` cuando solo necesites una vista de alto nivel; reserva `TaskGet` para el registro específico que pretendes leer cuidadosamente o modificar.
 
 ## Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `taskId` | string | Sí | ID de la tarea a obtener |
+- `taskId` (string, obligatorio): El identificador de la tarea devuelto por `TaskCreate` o `TaskList`. Los IDs son estables durante toda la vida de la tarea.
 
-## Contenido devuelto
+## Ejemplos
 
-- `subject` — Título de la tarea
-- `description` — Requisitos detallados y contexto
-- `status` — Estado: `pending`, `in_progress` o `completed`
-- `blocks` — Lista de tareas bloqueadas por esta tarea
-- `blockedBy` — Lista de tareas previas que bloquean esta tarea
+### Ejemplo 1
 
-## Casos de uso
+Busca una tarea que acabas de ver en la lista.
 
-**Adecuado para:**
-- Obtener la descripción completa y el contexto de una tarea antes de comenzar a trabajar
-- Entender las relaciones de dependencia de una tarea
-- Obtener los requisitos completos después de ser asignado a una tarea
+```
+TaskGet(taskId: "t_01HXYZ...")
+```
+
+Campos típicos de la respuesta: `id`, `subject`, `description`, `activeForm`, `status`, `owner`, `blocks`, `blockedBy`, `metadata`, `createdAt`, `updatedAt`.
+
+### Ejemplo 2
+
+Resolver dependencias antes de empezar.
+
+```
+TaskGet(taskId: "t_01HXYZ...")
+# Inspecciona blockedBy — si alguna tarea referenciada sigue pendiente
+# o en curso, trabaja primero en la bloqueante.
+```
 
 ## Notas
 
-- Después de obtener la tarea, se debe verificar si la lista `blockedBy` está vacía antes de comenzar a trabajar
-- Usar TaskList para ver la información resumida de todas las tareas
-
-## Texto original
-
-<textarea readonly>Use this tool to retrieve a task by its ID from the task list.
-
-## When to Use This Tool
-
-- When you need the full description and context before starting work on a task
-- To understand task dependencies (what it blocks, what blocks it)
-- After being assigned a task, to get complete requirements
-
-## Output
-
-Returns full task details:
-- **subject**: Task title
-- **description**: Detailed requirements and context
-- **status**: 'pending', 'in_progress', or 'completed'
-- **blocks**: Tasks waiting on this one to complete
-- **blockedBy**: Tasks that must complete before this one can start
-
-## Tips
-
-- After fetching a task, verify its blockedBy list is empty before beginning work.
-- Use TaskList to see all tasks in summary form.
-</textarea>
+- `TaskGet` es de solo lectura y seguro de llamar repetidamente; no cambia estado ni propiedad.
+- Si `blockedBy` no está vacío y contiene tareas que no están `completed`, no empieces esta tarea — resuelve primero las bloqueantes (o coordina con su propietario).
+- El campo `description` puede ser largo. Léelo completo antes de actuar; hojearlo lleva a pasar por alto criterios de aceptación.
+- Un `taskId` desconocido o eliminado devuelve un error. Vuelve a ejecutar `TaskList` para obtener un ID actual.
+- Si estás a punto de editar una tarea, llama a `TaskGet` primero para evitar sobrescribir campos que un compañero acaba de cambiar.

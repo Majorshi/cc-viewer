@@ -648,6 +648,50 @@
   flex-shrink: 0;
 }
 
+/* Tools / MCP 分组展示：chip 化 tool 名，flex wrap 自适应；
+   chip 设 max-width + ellipsis 防长 MCP 工具名（mcp__playwright__browser_take_screenshot
+   这种 40+ 字符）单行撑爆 popover 容器。悬停原名 + 描述通过 title 属性展示。 */
+.toolChipGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0 6px 14px;
+}
+
+.toolChipGridVertical {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 2px 0 6px 0;
+}
+
+.cacheToolChip {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  line-height: 18px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border-primary);
+  cursor: help;
+}
+
+.mcpServerGroup {
+  margin-bottom: 6px;
+}
+
+.mcpServerName {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 0 2px 14px;
+}
+
 .cacheCodeBlock {
   white-space: pre-wrap;
   word-break: break-word;

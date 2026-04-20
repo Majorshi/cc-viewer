@@ -153,6 +153,7 @@ function MarkdownBlock({ text, className, style, trailingCursor }) {
       />
       {(!isMobile || isPad) && hovered && (
         <div className={styles.actionBar} data-html2canvas-ignore>
+          <div className={`${styles.hoverPad} ${styles.hoverPadTop}`} aria-hidden="true" />
           <div className={styles.saveAsWrap}
             onMouseEnter={() => setSaveMenuOpen(true)}
             onMouseLeave={() => setSaveMenuOpen(false)}
@@ -183,6 +184,7 @@ function MarkdownBlock({ text, className, style, trailingCursor }) {
               </div>
             )}
           </div>
+          <div className={`${styles.hoverPad} ${styles.hoverPadBottom}`} aria-hidden="true" />
         </div>
       )}
     </div>

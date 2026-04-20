@@ -643,3 +643,44 @@ export function extractCachedContent(requests) {
 
   return result;
 }
+
+/**
+ * 把 extractCachedContent 产出的 tools 字符串数组（"name: description"）
+ * 拆分为内置工具和 MCP 工具两组。
+ *
+ * MCP 识别：name 匹配 /^mcp__(.+?)__(.+)$/，非贪心以支持 server 名含下划线
+ * （例如 mcp__some_server_name__do_thing → server: "some_server_name", tool: "do_thing"）。
+ *
+ * 边界：
+ * - tools 非数组或空 → { builtin: [], mcpByServer: new Map() }
+ * - 项为空字符串 → 跳过
+ * - 项无冒号 → 整串当 name，description 为空
+ *
+ * @param {string[]} tools
+ * @returns {{ builtin: Array<{name:string, description:string}>, mcpByServer: Map<string, Array<{name:string, fullName:string, description:string}>> }}
+ */
+export function parseCachedTools(tools) {
+  const builtin = [];
+  const mcpByServer = new Map();
+  if (!Array.isArray(tools)) return { builtin, mcpByServer };
+
+  for (const raw of tools) {
+    if (typeof raw !== 'string' || !raw) continue;
+    const colonIdx = raw.indexOf(':');
+    const name = colonIdx >= 0 ? raw.slice(0, colonIdx).trim() : raw.trim();
+    const description = colonIdx >= 0 ? raw.slice(colonIdx + 1).trim() : '';
+    if (!name) continue;
+
+    const mcpMatch = /^mcp__(.+?)__(.+)$/.exec(name);
+    if (mcpMatch) {
+      const server = mcpMatch[1];
+      const toolName = mcpMatch[2];
+      if (!mcpByServer.has(server)) mcpByServer.set(server, []);
+      mcpByServer.get(server).push({ name: toolName, fullName: name, description });
+    } else {
+      builtin.push({ name, description });
+    }
+  }
+
+  return { builtin, mcpByServer };
+}

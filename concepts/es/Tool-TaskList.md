@@ -1,56 +1,63 @@
 # TaskList
 
-## Definición
+Devuelve cada tarea del equipo (o sesión) actual en forma resumida. Úsala para revisar el trabajo pendiente, decidir qué tomar a continuación y evitar crear duplicados.
 
-Lista todas las tareas en la lista de tareas para ver el progreso general y el trabajo disponible.
+## Cuándo usar
+
+- Al inicio de una sesión para ver qué ya está registrado.
+- Antes de llamar a `TaskCreate`, para confirmar que el trabajo no esté ya capturado.
+- Al decidir qué tarea reclamar a continuación como compañero o subagente.
+- Para verificar relaciones de dependencia a lo largo del equipo de un vistazo.
+- Periódicamente durante sesiones largas para resincronizar con compañeros que pueden haber reclamado, completado o añadido tareas.
+
+`TaskList` es de solo lectura y económico; llámalo libremente cuando necesites una visión general.
 
 ## Parámetros
 
-Sin parámetros.
+`TaskList` no recibe parámetros. Siempre devuelve el conjunto completo de tareas del contexto activo.
 
-## Contenido devuelto
+## Forma de la respuesta
 
-Información resumida de cada tarea:
-- `id` — Identificador de la tarea
-- `subject` — Descripción breve
-- `status` — Estado: `pending`, `in_progress` o `completed`
-- `owner` — Responsable (agent ID), vacío indica no asignado
-- `blockedBy` — Lista de IDs de tareas incompletas que bloquean esta tarea
+Cada tarea en la lista es un resumen, no el registro completo. Espera aproximadamente:
 
-## Casos de uso
+- `id` — identificador estable para usar con `TaskGet` / `TaskUpdate`.
+- `subject` — título corto en imperativo.
+- `status` — uno de `pending`, `in_progress`, `completed`, `deleted`.
+- `owner` — handle de agente o compañero, o vacío cuando no está reclamada.
+- `blockedBy` — array de IDs de tarea que deben completarse primero.
 
-**Adecuado para:**
-- Ver qué tareas están disponibles (estado pending, sin owner, no bloqueadas)
-- Verificar el progreso general del proyecto
-- Encontrar tareas bloqueadas
-- Buscar la siguiente tarea después de completar una
+Para la descripción completa, los criterios de aceptación o los metadatos de una tarea específica, sigue con `TaskGet`.
+
+## Ejemplos
+
+### Ejemplo 1
+
+Comprobación rápida de estado.
+
+```
+TaskList()
+```
+
+Escanea la salida en busca de cualquier cosa `in_progress` sin `owner` (trabajo obsoleto) y cualquier cosa `pending` con `blockedBy` vacío (lista para tomar).
+
+### Ejemplo 2
+
+Compañero eligiendo la siguiente tarea.
+
+```
+TaskList()
+# Filtra a: status == pending Y blockedBy vacío Y owner vacío.
+# Entre esas, prefiere el ID más bajo (las tareas se numeran
+# típicamente en orden de creación, así que los IDs más bajos
+# son más antiguos y usualmente de mayor prioridad).
+TaskGet(taskId: "<id elegido>")
+TaskUpdate(taskId: "<id elegido>", status: "in_progress", owner: "<tu handle>")
+```
 
 ## Notas
 
-- Preferir procesar tareas en orden de ID (ID más bajo primero), ya que las tareas anteriores generalmente proporcionan contexto para las posteriores
-- Las tareas con `blockedBy` no pueden ser reclamadas hasta que se resuelvan las dependencias
-- Usar TaskGet para obtener los detalles completos de una tarea específica
-
-## Texto original
-
-<textarea readonly>Use this tool to list all tasks in the task list.
-
-## When to Use This Tool
-
-- To see what tasks are available to work on (status: 'pending', no owner, not blocked)
-- To check overall progress on the project
-- To find tasks that are blocked and need dependencies resolved
-- After completing a task, to check for newly unblocked work or claim the next available task
-- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones
-
-## Output
-
-Returns a summary of each task:
-- **id**: Task identifier (use with TaskGet, TaskUpdate)
-- **subject**: Brief description of the task
-- **status**: 'pending', 'in_progress', or 'completed'
-- **owner**: Agent ID if assigned, empty if available
-- **blockedBy**: List of open task IDs that must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)
-
-Use TaskGet with a specific task ID to view full details including description and comments.
-</textarea>
+- Heurística de compañero: cuando varias tareas `pending` están desbloqueadas y sin propietario, elige el ID más bajo. Esto mantiene el trabajo FIFO y evita que dos agentes agarren la misma tarea de alto perfil.
+- Respeta `blockedBy`: no inicies una tarea cuyas bloqueantes sigan `pending` o `in_progress`. Trabaja primero en la bloqueante o coordina con su propietario.
+- `TaskList` es el único mecanismo de descubrimiento para tareas. No hay búsqueda; si la lista es larga, escanéala estructuralmente (por estado, luego por propietario).
+- Las tareas eliminadas pueden seguir apareciendo en la lista con estado `deleted` para trazabilidad. Ignóralas para efectos de planificación.
+- La lista refleja el estado vivo del equipo, por lo que los compañeros pueden añadir o reclamar tareas entre llamadas. Vuelve a listar antes de reclamar si ha pasado tiempo.

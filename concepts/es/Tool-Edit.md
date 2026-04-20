@@ -1,46 +1,38 @@
 # Edit
 
-## Definición
+Realiza una sustitución exacta de cadenas dentro de un archivo existente. Es la forma preferida de modificar archivos porque solo se transmite el diff, manteniendo las ediciones precisas y auditables.
 
-Edita archivos mediante reemplazo exacto de cadenas. Reemplaza `old_string` por `new_string` en el archivo.
+## Cuándo usar
+
+- Corregir un bug en una sola función sin reescribir el archivo circundante
+- Actualizar un valor de configuración, una cadena de versión o una ruta de importación
+- Renombrar un símbolo en todo un archivo con `replace_all`
+- Insertar un bloque cerca de un ancla (amplía `old_string` para incluir contexto cercano, luego proporciona el reemplazo)
+- Aplicar ediciones pequeñas y bien acotadas como parte de un refactor en varios pasos
 
 ## Parámetros
 
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `file_path` | string | Sí | Ruta absoluta del archivo a modificar |
-| `old_string` | string | Sí | Texto original a reemplazar |
-| `new_string` | string | Sí | Nuevo texto de reemplazo (debe ser diferente de old_string) |
-| `replace_all` | boolean | No | Si se reemplazan todas las coincidencias, por defecto `false` |
+- `file_path` (string, obligatorio): Ruta absoluta del archivo a modificar.
+- `old_string` (string, obligatorio): El texto exacto a buscar. Debe coincidir carácter por carácter, incluyendo espacios en blanco e indentación.
+- `new_string` (string, obligatorio): El texto de reemplazo. Debe diferir de `old_string`.
+- `replace_all` (boolean, opcional): Cuando es `true`, reemplaza cada aparición de `old_string`. Por defecto es `false`, lo que requiere que la coincidencia sea única.
 
-## Casos de uso
+## Ejemplos
 
-**Adecuado para:**
-- Modificar segmentos específicos de código en archivos existentes
-- Corregir bugs, actualizar lógica
-- Renombrar variables (con `replace_all: true`)
-- Cualquier escenario que requiera modificación precisa del contenido de un archivo
+### Ejemplo 1: Corregir un solo sitio de llamada
+Establece `old_string` a la línea exacta `const port = 3000;` y `new_string` a `const port = process.env.PORT ?? 3000;`. La coincidencia es única, por lo que `replace_all` puede quedarse con su valor por defecto.
 
-**No adecuado para:**
-- Crear archivos nuevos — usar Write
-- Reescrituras a gran escala — puede requerir Write para sobrescribir el archivo completo
+### Ejemplo 2: Renombrar un símbolo en todo un archivo
+Para renombrar `getUser` a `fetchUser` en todas partes de `api.ts`, establece `old_string: "getUser"`, `new_string: "fetchUser"` y `replace_all: true`.
+
+### Ejemplo 3: Desambiguar un fragmento repetido
+Si `return null;` aparece en varias ramas, amplía `old_string` para incluir contexto circundante (por ejemplo la línea `if` precedente) de modo que la coincidencia sea única. De lo contrario, la herramienta da error en vez de adivinar.
 
 ## Notas
 
-- Se debe haber leído el archivo previamente con Read antes de usar, de lo contrario dará error
-- `old_string` debe ser único en el archivo, de lo contrario la edición falla. Si no es único, proporcionar más contexto para hacerlo único, o usar `replace_all`
-- Al editar texto se debe mantener la indentación original (tab/espacios), no incluir el prefijo de número de línea de la salida de Read
-- Preferir editar archivos existentes en lugar de crear nuevos
-- `new_string` debe ser diferente de `old_string`
-
-## Texto original
-
-<textarea readonly>Performs exact string replacements in files.
-
-Usage:
-- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. 
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
-- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`.
-- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.</textarea>
+- Debes llamar a `Read` sobre el archivo al menos una vez en la sesión actual antes de que `Edit` acepte cambios. Los prefijos de número de línea de la salida de `Read` no forman parte del contenido del archivo; no los incluyas en `old_string` ni en `new_string`.
+- Los espacios en blanco deben coincidir exactamente. Presta atención a tabs versus espacios y a los espacios al final de línea, especialmente en YAML, Makefiles y Python.
+- Si `old_string` no es único y `replace_all` es `false`, la edición falla. Amplía el contexto o habilita `replace_all`.
+- Prefiere `Edit` sobre `Write` siempre que el archivo ya exista; `Write` sobrescribe todo el archivo y pierde contenido no relacionado si no tienes cuidado.
+- Para varias ediciones no relacionadas en el mismo archivo, realiza varias llamadas `Edit` en secuencia en lugar de un reemplazo único grande y frágil.
+- Evita introducir emojis, texto de marketing o bloques de documentación no solicitados al editar archivos de código fuente.

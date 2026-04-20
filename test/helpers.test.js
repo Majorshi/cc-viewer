@@ -607,4 +607,111 @@ describe('helpers', () => {
       assert.equal(result.cacheReadTokens, 5000);
     });
   });
+
+  // ─── parseCachedTools ──────────────────────────────────────────────────────
+  // Inline copy of src/utils/helpers.js::parseCachedTools
+  function parseCachedTools(tools) {
+    const builtin = [];
+    const mcpByServer = new Map();
+    if (!Array.isArray(tools)) return { builtin, mcpByServer };
+    for (const raw of tools) {
+      if (typeof raw !== 'string' || !raw) continue;
+      const colonIdx = raw.indexOf(':');
+      const name = colonIdx >= 0 ? raw.slice(0, colonIdx).trim() : raw.trim();
+      const description = colonIdx >= 0 ? raw.slice(colonIdx + 1).trim() : '';
+      if (!name) continue;
+      const mcpMatch = /^mcp__(.+?)__(.+)$/.exec(name);
+      if (mcpMatch) {
+        const server = mcpMatch[1];
+        const toolName = mcpMatch[2];
+        if (!mcpByServer.has(server)) mcpByServer.set(server, []);
+        mcpByServer.get(server).push({ name: toolName, fullName: name, description });
+      } else {
+        builtin.push({ name, description });
+      }
+    }
+    return { builtin, mcpByServer };
+  }
+
+  describe('parseCachedTools', () => {
+    it('returns empty groups for non-array / null / undefined input', () => {
+      assert.deepEqual(parseCachedTools(null), { builtin: [], mcpByServer: new Map() });
+      assert.deepEqual(parseCachedTools(undefined), { builtin: [], mcpByServer: new Map() });
+      assert.deepEqual(parseCachedTools('not-array'), { builtin: [], mcpByServer: new Map() });
+      assert.deepEqual(parseCachedTools([]), { builtin: [], mcpByServer: new Map() });
+    });
+
+    it('classifies builtin vs MCP by name prefix', () => {
+      const { builtin, mcpByServer } = parseCachedTools([
+        'Bash: Run commands',
+        'Read: Read a file',
+        'mcp__slack__post_message: Post to Slack',
+      ]);
+      assert.equal(builtin.length, 2);
+      assert.deepEqual(builtin[0], { name: 'Bash', description: 'Run commands' });
+      assert.deepEqual(builtin[1], { name: 'Read', description: 'Read a file' });
+      assert.equal(mcpByServer.size, 1);
+      assert.ok(mcpByServer.has('slack'));
+      assert.deepEqual(mcpByServer.get('slack')[0], {
+        name: 'post_message', fullName: 'mcp__slack__post_message', description: 'Post to Slack',
+      });
+    });
+
+    it('supports MCP server name containing underscores (non-greedy regex)', () => {
+      const { mcpByServer } = parseCachedTools([
+        'mcp__some_server_name__do_thing: desc',
+        'mcp__claude_ai_Google_Drive__authenticate: Auth',
+      ]);
+      assert.ok(mcpByServer.has('some_server_name'));
+      assert.equal(mcpByServer.get('some_server_name')[0].name, 'do_thing');
+      assert.ok(mcpByServer.has('claude_ai_Google_Drive'));
+      assert.equal(mcpByServer.get('claude_ai_Google_Drive')[0].name, 'authenticate');
+    });
+
+    it('groups multiple tools per MCP server', () => {
+      const { mcpByServer } = parseCachedTools([
+        'mcp__gdrive__list_files: List',
+        'mcp__gdrive__read_file: Read',
+        'mcp__gdrive__search: Search',
+      ]);
+      assert.equal(mcpByServer.size, 1);
+      assert.equal(mcpByServer.get('gdrive').length, 3);
+      assert.deepEqual(mcpByServer.get('gdrive').map(t => t.name), ['list_files', 'read_file', 'search']);
+    });
+
+    it('handles items with no colon / empty description / extra colons in description', () => {
+      const { builtin, mcpByServer } = parseCachedTools([
+        'LoneName',                          // no colon → name only
+        'WithEmpty:',                         // empty description
+        'Grep: Search for: pattern matches', // description contains colon (only first split)
+        '',                                   // empty string → skip
+        'mcp__x__y:',                         // MCP with empty description
+      ]);
+      assert.equal(builtin.length, 3);
+      assert.deepEqual(builtin[0], { name: 'LoneName', description: '' });
+      assert.deepEqual(builtin[1], { name: 'WithEmpty', description: '' });
+      assert.deepEqual(builtin[2], { name: 'Grep', description: 'Search for: pattern matches' });
+      assert.ok(mcpByServer.has('x'));
+      assert.deepEqual(mcpByServer.get('x')[0], { name: 'y', fullName: 'mcp__x__y', description: '' });
+    });
+
+    it('skips non-string / null entries gracefully', () => {
+      const { builtin, mcpByServer } = parseCachedTools([
+        null, undefined, 42, { weird: true },
+        'Bash: ok',
+      ]);
+      assert.equal(builtin.length, 1);
+      assert.equal(builtin[0].name, 'Bash');
+      assert.equal(mcpByServer.size, 0);
+    });
+
+    it('treats an entry starting with mcp__ but without the second __ as a builtin (no valid MCP tool name)', () => {
+      const { builtin, mcpByServer } = parseCachedTools([
+        'mcp__incomplete: not a valid mcp tool name',
+      ]);
+      assert.equal(builtin.length, 1);
+      assert.equal(builtin[0].name, 'mcp__incomplete');
+      assert.equal(mcpByServer.size, 0);
+    });
+  });
 });

@@ -1,41 +1,47 @@
-# executeCode (mcp__ide__executeCode)
+# executeCode
 
-## Definisjon
+Utfører en kodesnutt inne i en levende kernel eller sandbox levert av en IDE-integrasjon (for eksempel Jupyter-kernelen bundet til den gjeldende åpne notebooken). Verktøyet er kun tilstede når Claude Code kjører sammen med en kompatibel IDE-bro som VS Code-utvidelsen med en valgt Jupyter-kernel.
 
-Kjører Python-kode i Jupyter-kernelen for gjeldende notebook-fil.
+## Når skal den brukes
+
+- Kjøre en rask beregning, datainspeksjon eller plot mot tilstanden som allerede er lastet i en aktiv Jupyter-kernel.
+- Validere en kodesnutt før du limer den inn i en notebook-celle.
+- Utforske en datasett i minne, variabel eller modell som eksisterer i kernelen, men ikke er serialisert til disk.
+- Produsere et diagram eller numerisk resultat som brukeren vil ha rendret inline i IDE-et.
+
+IKKE bruk for frittstående skript som er bedre tjent med `Bash` som kjører `python script.py`, eller for kode som må persistere på tvers av en ny kernel.
 
 ## Parametere
 
-| Parameter | Type | Påkrevd | Beskrivelse |
-|-----------|------|---------|-------------|
-| `code` | string | Ja | Python-koden som skal kjøres |
+- `code` (string, påkrevd): Koden som skal kjøres i gjeldende kernel. Kjører som om limt inn i en notebook-celle — variabler som defineres persisterer i kernelen til den startes på nytt.
+- `language` (string, valgfri): Språket til snutten når IDE-broen støtter flere kerneler. Vanligvis utelatt; standard er språket til den aktive kernelen (typisk Python).
 
-## Bruksscenarioer
+## Eksempler
 
-**Egnet for bruk:**
-- Kjøre kode i Jupyter notebook-miljø
-- Teste kodesnutter
-- Dataanalyse og beregninger
+### Eksempel 1: Inspiser en dataframe i minnet
 
-**Ikke egnet for bruk:**
-- Kodekjøring utenfor Jupyter-miljø — bruk Bash
-- Endre filer — bruk Edit eller Write
+```
+executeCode(
+  code="df.head()\nprint(df.shape)\nprint(df.dtypes)"
+)
+```
 
-## Merknader
+Returnerer de første radene, formen og kolonne-dtypene til en dataframe som allerede er lastet i kernelen.
 
-- Dette er et MCP-verktøy (Model Context Protocol), levert av IDE-integrasjonen
-- Koden kjøres i gjeldende Jupyter-kernel, og tilstanden vedvarer mellom kall
-- Med mindre brukeren eksplisitt ber om det, bør du unngå å deklarere variabler eller endre kernel-tilstand
-- Tilstanden går tapt etter omstart av kernelen
+### Eksempel 2: Rask numerisk sjekk
 
-## Originaltekst
+```
+executeCode(
+  code="import numpy as np\nnp.mean([1, 2, 3, 4, 5])"
+)
+```
 
-<textarea readonly>Execute python code in the Jupyter kernel for the current notebook file.
-    
-    All code will be executed in the current Jupyter kernel.
-    
-    Avoid declaring variables or modifying the state of the kernel unless the user
-    explicitly asks for it.
-    
-    Any code executed will persist across calls to this tool, unless the kernel
-    has been restarted.</textarea>
+Kjører en engangsberegning uten å opprette en notebook-celle.
+
+## Notater
+
+- `executeCode` er et IDE-bro-verktøy. Det er utilgjengelig i vanlige terminalsesjoner av Claude Code; det vises kun når sesjonen er koblet til en IDE som eksponerer en kernel (for eksempel VS Code Jupyter-utvidelsen).
+- Tilstand persisterer i kernelen. Variabler definert av ett `executeCode`-kall forblir synlige for senere kall, for notebook-celler og for brukeren — vær oppmerksom på sideeffekter.
+- Langvarig eller blokkerende kode vil blokkere kernelen. Hold snutter korte; for flere-minutters arbeid, skriv et faktisk skript og kjør det via `Bash`.
+- Utdata (stdout, returverdier, bilder) returneres til sesjonen. Svært store utdata kan trunkeres av IDE-broen.
+- For filredigeringer, foretrekk `Edit`, `Write` eller `NotebookEdit` — `executeCode` er ikke en erstatning for å skrive kildefiler.
