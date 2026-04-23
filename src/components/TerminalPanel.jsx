@@ -941,8 +941,9 @@ class TerminalPanel extends React.Component {
     if (!description) return;
     this.setState({ agentTeamPopoverOpen: false });
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      // 用 bracket paste mode 包裹，让终端识别为一次粘贴，可整体删除
-      this.ws.send(JSON.stringify({ type: 'input', data: `\x1b[200~${description}\x1b[201~` }));
+      // bracket paste mode 包裹让终端识别为一次粘贴，末尾 `\r` 让 TUI 直接提交，
+      // 不留在 `[Pasted text #N +M lines]` 状态要用户再按 Enter。对齐同文件 handleUltraplanSend 的做法。
+      this.ws.send(JSON.stringify({ type: 'input', data: `\x1b[200~${description}\x1b[201~\r` }));
     }
     if ((!isMobile || isPad) && this.terminal) this.terminal.focus();
   };

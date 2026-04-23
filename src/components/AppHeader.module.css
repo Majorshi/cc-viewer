@@ -660,6 +660,14 @@
   gap: 6px;
 }
 
+/* 在 flex header 行里用时清掉 `.cacheSectionLabel` 自带的 `margin-bottom: 4px` ——
+   那是为「标题上面 + body 下面」的纵向布局准备的，在 header 里会让 label 的 margin-box
+   不对称，`align-items:center` 按 margin-box 居中会让文字视觉上比 Alert / 按钮高 2px。
+   MCP section 里 label 不在 header 里、直接跟 body 叠，margin-bottom 保留。 */
+.cacheSectionHeader > .cacheSectionLabel {
+  margin-bottom: 0;
+}
+
 /* 静态分组标签（MCP / 已载入 Skill 用）：去掉折叠按钮语义，只保留文字样式。
    与 .cacheSectionTitle 视觉一致（12px / 600 / --text-light / 4px 上下 padding），
    但不是 button、无 cursor:pointer、无 :hover 颜色变化、不可聚焦 —— 单纯一个 label。*/

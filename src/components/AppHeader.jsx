@@ -1,5 +1,5 @@
 import React from 'react';
-import { Space, Tag, Button, Dropdown, Popover, Modal, Collapse, Drawer, Switch, Radio, Tabs, Spin, Input, Table, Select, Tooltip, message } from 'antd';
+import { Space, Tag, Button, Dropdown, Popover, Modal, Collapse, Drawer, Switch, Radio, Tabs, Spin, Input, Table, Select, Tooltip, Alert, message } from 'antd';
 import { MessageOutlined, FileTextOutlined, ImportOutlined, DashboardOutlined, ExportOutlined, DownloadOutlined, SettingOutlined, BarChartOutlined, CodeOutlined, CopyOutlined, ApiOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined, CloudDownloadOutlined, SwapOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { QRCodeCanvas } from 'qrcode.react';
 import { formatTokenCount, computeTokenStats, computeCacheRebuildStats, computeToolUsageStats, computeSkillUsageStats, getModelMaxTokens, extractCachedContent, parseCachedTools, extractLoadedSkills } from '../utils/helpers';
@@ -748,12 +748,31 @@ class AppHeader extends React.Component {
               </div>
             )}
             {hasSkills && (
-              // 已载入 Skill 同样去折叠 + 加框；「管理」按钮放标题右侧（space-between + 蓝色 primary）
+              // 已载入 Skill 同样去折叠 + 加框；「管理」按钮放标题右侧（space-between + 蓝色 primary）。
+              // skill 数量 >10 黄色提示"浪费 token 幻觉"、>20 红色提示"上下文污染"——插在 label 和 action 之间，
+              // flex:1 填充中间空白。阈值只按展示 chip 数（已排除 builtin）来算，builtin 是系统自带不计。
               <div className={`${styles.cacheSection} ${styles.cacheSectionBordered}`}>
                 <div className={styles.cacheSectionHeader}>
                   <div className={styles.cacheSectionLabel}>
                     {t('ui.loadedSkills')} ({skills.length})
                   </div>
+                  {skills.length > 20 ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      banner
+                      message={t('ui.skillsWarnPollution')}
+                      style={{ marginRight: 'auto', padding: '2px 8px', fontSize: 11 }}
+                    />
+                  ) : skills.length > 10 ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      banner
+                      message={t('ui.skillsWarnOveruse')}
+                      style={{ marginRight: 'auto', padding: '2px 8px', fontSize: 11 }}
+                    />
+                  ) : null}
                   {skillsAction}
                 </div>
                 {skillsBody}
