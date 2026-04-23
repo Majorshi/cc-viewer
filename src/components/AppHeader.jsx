@@ -1477,13 +1477,11 @@ class AppHeader extends React.Component {
           })()}
           {updateInfo && (
             <Tag
-              color={updateInfo.type === 'completed' ? 'green' : 'orange'}
+              color="orange"
               closable
               onClose={() => onDismissUpdate && onDismissUpdate()}
             >
-              {updateInfo.type === 'completed'
-                ? t('ui.update.completed', { version: updateInfo.version })
-                : t('ui.update.majorAvailable', { version: updateInfo.version })}
+              {t('ui.update.majorAvailable', { version: updateInfo.version })}
             </Tag>
           )}
         </Space>

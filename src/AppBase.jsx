@@ -617,13 +617,9 @@ class AppBase extends React.Component {
         this._resetSSETimeout();
         this.setState({ resumeModalVisible: false, resumeFileName: '', resumeRememberChoice: false });
       });
-      this.eventSource.addEventListener('update_completed', (event) => {
-        this._resetSSETimeout();
-        try {
-          const data = JSON.parse(event.data);
-          this.setState({ updateInfo: { type: 'completed', version: data.version } });
-        } catch { }
-      });
+      // update_completed 事件已废弃：自 1.6.203 起后台 detached npm install 负责升级，
+      // 当前进程内存里仍是旧版本，广播"已升级完成"会误导用户。保留 update_major_available
+      // 作为"有新版可用"的统一信号（包含跨大版本提示 + 本版本忙时跳过两种场景）。
       this.eventSource.addEventListener('update_major_available', (event) => {
         this._resetSSETimeout();
         try {

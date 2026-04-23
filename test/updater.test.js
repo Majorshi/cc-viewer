@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from '
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { checkAndUpdate } from '../lib/updater.js';
+import { checkAndUpdate, isAnyCcvBusy } from '../lib/updater.js';
 import { getClaudeConfigDir } from '../findcc.js';
 
 const CACHE_DIR = join(getClaudeConfigDir(), 'cc-viewer');
@@ -182,7 +182,7 @@ describe('checkAndUpdate — fetch', () => {
     globalThis.fetch = origFetch;
   });
 
-  it('fetches registry and returns a valid status', async () => {
+  it('fetches registry and returns upgrading_in_background for same-major bump (idle)', async () => {
     // Force a check by writing an old timestamp
     mkdirSync(CACHE_DIR, { recursive: true });
     writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
@@ -200,8 +200,14 @@ describe('checkAndUpdate — fetch', () => {
       },
     });
 
-    const result = await checkAndUpdate({ fetchImpl: globalThis.fetch, dryRun: true, execImpl: () => { } });
-    assert.equal(result.status, 'updated');
+    // lsofImpl 返回空（只有自己一个 pid 也行）→ 空闲；dryRun 跳过真 spawn
+    const result = await checkAndUpdate({
+      fetchImpl: globalThis.fetch,
+      dryRun: true,
+      busy: false,
+      lsofImpl: () => '',
+    });
+    assert.equal(result.status, 'upgrading_in_background');
     assert.equal(result.remoteVersion, remote);
     assert.equal(result.currentVersion, pkg.version);
   });
@@ -282,7 +288,7 @@ describe('checkAndUpdate — fetch', () => {
     assert.ok(result.error.includes('503'));
   });
 
-  it('returns error when exec fails during update', async () => {
+  it('returns error when spawn throws during install', async () => {
     mkdirSync(CACHE_DIR, { recursive: true });
     writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
 
@@ -293,10 +299,247 @@ describe('checkAndUpdate — fetch', () => {
 
     const result = await checkAndUpdate({
       fetchImpl: async () => ({ ok: true, async json() { return { 'dist-tags': { latest: remote } }; } }),
-      execImpl: () => { throw new Error('permission denied'); },
+      busy: false,
+      lsofImpl: () => '',
+      spawnImpl: () => { throw new Error('permission denied'); },
     });
     assert.equal(result.status, 'error');
     assert.ok(result.error.includes('permission denied'));
+  });
+
+  it('returns deferred_busy when caller passes busy=true', async () => {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
+
+    const pkgPath = join(import.meta.dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const remote = `${maj}.${min}.${pat + 1}`;
+
+    let spawnCalled = false;
+    const result = await checkAndUpdate({
+      fetchImpl: async () => ({ ok: true, async json() { return { 'dist-tags': { latest: remote } }; } }),
+      busy: true,
+      spawnImpl: () => { spawnCalled = true; return { unref() {} }; },
+    });
+    assert.equal(result.status, 'deferred_busy');
+    assert.equal(result.remoteVersion, remote);
+    assert.equal(spawnCalled, false, 'spawn must not be called when busy');
+  });
+
+  it('returns deferred_busy when lsof reports another CCV instance', async () => {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
+
+    const pkgPath = join(import.meta.dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const remote = `${maj}.${min}.${pat + 1}`;
+
+    // 构造一个假的 lsof -Fp 输出：两个 pid，其中一个是自己（跳过），一个是别人（触发 busy）
+    const fakeLsof = `p${process.pid}\nf\np99999\nf\n`;
+    let spawnCalled = false;
+    const result = await checkAndUpdate({
+      fetchImpl: async () => ({ ok: true, async json() { return { 'dist-tags': { latest: remote } }; } }),
+      busy: false,
+      lsofImpl: () => fakeLsof,
+      spawnImpl: () => { spawnCalled = true; return { unref() {} }; },
+    });
+    assert.equal(result.status, 'deferred_busy');
+    assert.equal(spawnCalled, false, 'spawn must not be called when other instance detected');
+  });
+
+  it('proceeds to upgrade when lsof is missing (non-POSIX fallback)', async () => {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
+
+    const pkgPath = join(import.meta.dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const remote = `${maj}.${min}.${pat + 1}`;
+
+    let spawnCalls = 0;
+    let spawnArgs = null;
+    let unrefCalled = false;
+    const result = await checkAndUpdate({
+      fetchImpl: async () => ({ ok: true, async json() { return { 'dist-tags': { latest: remote } }; } }),
+      busy: false,
+      lsofImpl: () => { throw new Error('ENOENT: lsof not found'); },
+      spawnImpl: (cmd, args, opts) => {
+        spawnCalls++;
+        spawnArgs = { cmd, args, opts };
+        return { unref() { unrefCalled = true; } };
+      },
+    });
+    assert.equal(result.status, 'upgrading_in_background');
+    assert.equal(spawnCalls, 1);
+    assert.equal(spawnArgs.cmd, 'npm');
+    assert.deepStrictEqual(spawnArgs.args, ['install', '-g', `cc-viewer@${remote}`, '--no-audit', '--no-fund']);
+    assert.equal(spawnArgs.opts.detached, true);
+    assert.equal(spawnArgs.opts.stdio, 'ignore');
+    assert.equal(unrefCalled, true, 'unref must be called on detached child');
+  });
+});
+
+// ─── isAnyCcvBusy unit tests ───
+
+describe('isAnyCcvBusy', () => {
+  it('returns true when busy hint is true', () => {
+    const result = isAnyCcvBusy({ currentPid: 100, busy: true, lsofImpl: () => '' });
+    assert.equal(result, true);
+  });
+
+  it('returns false when busy=false and lsof shows only self', () => {
+    const result = isAnyCcvBusy({
+      currentPid: 12345,
+      busy: false,
+      lsofImpl: () => `p12345\nf\n`,
+    });
+    assert.equal(result, false);
+  });
+
+  it('returns true when lsof shows another pid besides self', () => {
+    const result = isAnyCcvBusy({
+      currentPid: 100,
+      busy: false,
+      lsofImpl: () => `p100\nf\np200\nf\n`,
+    });
+    assert.equal(result, true);
+  });
+
+  it('returns false when lsof throws (non-POSIX fallback)', () => {
+    const result = isAnyCcvBusy({
+      currentPid: 100,
+      busy: false,
+      lsofImpl: () => { throw new Error('no lsof'); },
+    });
+    assert.equal(result, false);
+  });
+
+  it('respects custom portRange', () => {
+    let receivedCmd = null;
+    isAnyCcvBusy({
+      currentPid: 100,
+      busy: false,
+      portRange: [8000, 8010],
+      lsofImpl: (cmd) => { receivedCmd = cmd; return ''; },
+    });
+    assert.ok(receivedCmd.includes('8000-8010'), `expected port range 8000-8010 in cmd: ${receivedCmd}`);
+  });
+
+  it('ignores non-pid fields in real lsof -Fp output', () => {
+    // 真 lsof -Fp 输出每条 process 还会带 f/cwd/txt/rtd 等字段；
+    // 严格正则 /^p\d+$/ 确保只认纯 "p<digits>"，把 fXX 等行过滤掉。
+    const realistic = [
+      'p100',
+      'fcwd',
+      'frtd',
+      'ftxt',
+      'f0',
+      'f1',
+      'f3',
+      'p200',
+      'fcwd',
+      'f0',
+      '',
+    ].join('\n');
+    const result = isAnyCcvBusy({
+      currentPid: 100,
+      busy: false,
+      lsofImpl: () => realistic,
+    });
+    assert.equal(result, true, 'p200 应被识别为另一个 CCV 实例');
+  });
+
+  it('handles CRLF line endings in lsof output', () => {
+    // 管道/Windows 下输出可能带 \r；不预清就会让最后一行是 `p200\r` 无法通过 ^p\d+$ 校验。
+    const crlf = `p100\r\nf\r\np200\r\nf\r\n`;
+    const result = isAnyCcvBusy({
+      currentPid: 100,
+      busy: false,
+      lsofImpl: () => crlf,
+    });
+    assert.equal(result, true, 'CRLF 预清后应识别 p200');
+  });
+
+  it('rejects malformed p lines (empty / negative / non-digits)', () => {
+    const garbage = [
+      'p',       // 空 pid
+      'p-1',     // 负数
+      'p0',      // 非法 pid
+      'pabc',    // 非数字
+      'pXYZ',
+      'p200',    // 唯一合法
+    ].join('\n');
+    const result = isAnyCcvBusy({
+      currentPid: 100,
+      busy: false,
+      lsofImpl: () => garbage,
+    });
+    assert.equal(result, true, '只有 p200 合法，应识别为其它实例');
+  });
+});
+
+// ─── spawn 返回值边角 ───
+
+describe('checkAndUpdate spawn return defense', () => {
+  let origEnv;
+
+  beforeEach(() => {
+    origEnv = process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC;
+    delete process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC;
+    backupSettings();
+    enableAutoUpdates();
+    backupCache();
+  });
+
+  afterEach(() => {
+    restoreCache();
+    restoreSettings();
+    if (origEnv === undefined) delete process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC;
+    else process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = origEnv;
+  });
+
+  it('tolerates spawnImpl returning null (no crash on missing unref)', async () => {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
+
+    const pkgPath = join(import.meta.dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const remote = `${maj}.${min}.${pat + 1}`;
+
+    const result = await checkAndUpdate({
+      fetchImpl: async () => ({ ok: true, async json() { return { 'dist-tags': { latest: remote } }; } }),
+      busy: false,
+      lsofImpl: () => '',
+      spawnImpl: () => null, // 极端情况，spawn 返回 null
+    });
+    // 不抛异常 + 状态正确
+    assert.equal(result.status, 'upgrading_in_background');
+    assert.equal(result.remoteVersion, remote);
+  });
+
+  it('sets shell=true only on win32 (sanity check of platform branch)', async () => {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(CACHE_FILE, JSON.stringify({ lastCheck: 0 }));
+
+    const pkgPath = join(import.meta.dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const remote = `${maj}.${min}.${pat + 1}`;
+
+    let capturedOpts = null;
+    await checkAndUpdate({
+      fetchImpl: async () => ({ ok: true, async json() { return { 'dist-tags': { latest: remote } }; } }),
+      busy: false,
+      lsofImpl: () => '',
+      spawnImpl: (_cmd, _args, opts) => { capturedOpts = opts; return { unref() {} }; },
+    });
+    // 当前测试宿主非 win32 → shell 应为 false；如果在 Windows CI 跑会是 true
+    assert.equal(capturedOpts.shell, process.platform === 'win32');
+    assert.equal(capturedOpts.detached, true);
+    assert.equal(capturedOpts.stdio, 'ignore');
   });
 });
 

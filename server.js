@@ -3408,20 +3408,30 @@ if (!isWorkspaceMode) {
   _initPromise.then(() => {
     startViewer().then((srv) => {
       if (!srv) return;
-      // 延迟 3 秒异步检查更新
-      setTimeout(() => {
-        checkAndUpdate().then(result => {
-          if (result.status === 'updated') {
+      // 延迟 30 秒异步检查更新。
+      // 为什么是 30s 而非 3s：空闲/忙判断的核心是 `clients.length`(SSE 已连) + PTY + SDK。
+      // 3s 时大多数 client 还没连上 → busy 恒 false → 升级照打断用户。30s 给"活跃会话"留出进入窗口。
+      // 同大版本直接后台 detached npm install（不阻塞事件循环）；跨大版本 / 忙时 → 仅广播 banner，用户下次启动再升。
+      setTimeout(async () => {
+        let ptyRunning = false;
+        try {
+          const { getPtyState } = await import('./pty-manager.js');
+          ptyRunning = getPtyState().running === true;
+        } catch { /* 未加载 pty-manager 或 import 失败 → 当作不 running */ }
+        const busy = clients.length > 0 || ptyRunning || _sdkResolveApproval !== null;
+        try {
+          const result = await checkAndUpdate({ busy, portRange: [START_PORT, MAX_PORT] });
+          // major_available 和 deferred_busy 都是"有新版但这次不升级"——共用 update_major_available 事件渲染 banner。
+          if (result.status === 'major_available' || result.status === 'deferred_busy') {
+            const payload = JSON.stringify({ version: result.remoteVersion });
             clients.forEach(client => {
-              try { client.write(`event: update_completed\ndata: ${JSON.stringify({ version: result.remoteVersion })}\n\n`); } catch { }
+              try { client.write(`event: update_major_available\ndata: ${payload}\n\n`); } catch { }
             });
-          } else if (result.status === 'major_available') {
-            clients.forEach(client => {
-              try { client.write(`event: update_major_available\ndata: ${JSON.stringify({ version: result.remoteVersion })}\n\n`); } catch { }
-            });
+          } else if (result.status === 'upgrading_in_background') {
+            console.error(`[CC Viewer] background upgrade to ${result.remoteVersion} started (active after next launch)`);
           }
-        }).catch(() => { });
-      }, 3000);
+        } catch { /* update check 失败静默 */ }
+      }, 30_000);
     }).catch(err => {
       console.error('Failed to start CC Viewer:', err);
     });
