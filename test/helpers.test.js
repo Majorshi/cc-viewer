@@ -79,6 +79,23 @@ function getEffectiveModel(request) {
   return request?.response?.body?.model || request?.body?.model || null;
 }
 
+function getModelInfo(modelName) {
+  if (!modelName) return null;
+  return {
+    name: modelName.replace(/^claude-/, '').replace(/-\d{8,}$/, ''),
+    provider: modelName,
+  };
+}
+
+function resolveProducerModelInfo(ts, role, tsToIndex, modelNameByReqIdx) {
+  if (!ts) return null;
+  const idx = tsToIndex[ts];
+  if (idx == null) return null;
+  const producerIdx = role === 'assistant' ? Math.max(idx - 1, 0) : idx;
+  const name = modelNameByReqIdx[producerIdx];
+  return name ? getModelInfo(name) : null;
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -365,6 +382,84 @@ describe('helpers', () => {
     });
     it('returns null when body and response are entirely absent', () => {
       assert.equal(getEffectiveModel({}), null);
+    });
+  });
+
+  describe('resolveProducerModelInfo', () => {
+    // 模拟 3 轮对话场景：
+    //   R1=claude-opus-4-7 (idx=0, ts=t1)
+    //   R2=claude-sonnet-4-6 (idx=1, ts=t2)
+    //   R3=deepseek-v4 (idx=2, ts=t3)
+    // _processEntries 给 a(N-1) 赋的 _timestamp 是 T(N) — 所以 a1._ts=t2, a2._ts=t3
+    const tsToIndex = { t1: 0, t2: 1, t3: 2 };
+    const modelNameByReqIdx = ['claude-opus-4-7', 'claude-sonnet-4-6', 'deepseek-v4'];
+
+    it('user message: producer = tsToIndex[ts]', () => {
+      // q2._ts=t2 → R2 → sonnet-4-6
+      const info = resolveProducerModelInfo('t2', 'user', tsToIndex, modelNameByReqIdx);
+      assert.equal(info.name, 'sonnet-4-6');
+    });
+
+    it('assistant message: producer = tsToIndex[ts] - 1 (off-by-one fix)', () => {
+      // a1._ts=t2 (被赋值为下一轮 entry ts) → producer R1 → opus-4-7
+      const info = resolveProducerModelInfo('t2', 'assistant', tsToIndex, modelNameByReqIdx);
+      assert.equal(info.name, 'opus-4-7');
+    });
+
+    it('assistant message late entry: producer = tsToIndex[ts] - 1', () => {
+      // a2._ts=t3 → producer R2 → sonnet-4-6
+      const info = resolveProducerModelInfo('t3', 'assistant', tsToIndex, modelNameByReqIdx);
+      assert.equal(info.name, 'sonnet-4-6');
+    });
+
+    it('assistant at idx 0 (mid-session start): clamp to current entry model', () => {
+      // mid-session 启动场景：cc-viewer 在对话进行中才打开，第一个 entry 的
+      // body.messages 已含历史 [user, assistant, user, ...]，那条 assistant
+      // 被赋 _timestamp=T0 → idx=0，producer 不在视野内 → 用当前 entry model 兜底
+      const info = resolveProducerModelInfo('t1', 'assistant', tsToIndex, modelNameByReqIdx);
+      assert.equal(info.name, 'opus-4-7');
+    });
+
+    it('assistant at idx 0 with empty modelNameByReqIdx[0] → null', () => {
+      // mid-session 边界 + 第一个 entry 还没拿到 effectiveModel（极端 transient）→ 仍返回 null
+      const info = resolveProducerModelInfo('t1', 'assistant', tsToIndex, [null, 'claude-sonnet-4-6']);
+      assert.strictEqual(info, null);
+    });
+
+    it('ts not in tsToIndex → null (no global fallback)', () => {
+      // 未匹配返回 null，让 ChatMessage 显示中性 'MainAgent'，不污染最新 model
+      const info = resolveProducerModelInfo('t999', 'assistant', tsToIndex, modelNameByReqIdx);
+      assert.strictEqual(info, null);
+    });
+
+    it('null ts → null', () => {
+      assert.strictEqual(resolveProducerModelInfo(null, 'user', tsToIndex, modelNameByReqIdx), null);
+    });
+
+    it('undefined ts → null', () => {
+      assert.strictEqual(resolveProducerModelInfo(undefined, 'assistant', tsToIndex, modelNameByReqIdx), null);
+    });
+
+    it('producer slot is empty → null', () => {
+      const sparse = ['claude-opus-4-7', null, 'deepseek-v4'];
+      // a2._ts=t3 → producer idx 1 → null（无 model 信息时不兜底最新）
+      const info = resolveProducerModelInfo('t3', 'assistant', tsToIndex, sparse);
+      assert.strictEqual(info, null);
+    });
+
+    it('loadEarlier scenario: prepended history idx 都已重建', () => {
+      // 用户 loadEarlier 后 modelNameByReqIdx 全量重扫，每个 idx 都正确填充
+      const expanded = { t0: 0, t1: 1, t2: 2, t3: 3 };
+      const expandedModels = ['claude-haiku-4-5', 'claude-opus-4-7', 'claude-sonnet-4-6', 'deepseek-v4'];
+      // a0 (loaded earlier)._ts=t1 → producer R0 → haiku-4-5
+      const info = resolveProducerModelInfo('t1', 'assistant', expanded, expandedModels);
+      assert.equal(info.name, 'haiku-4-5');
+    });
+
+    it('ts mapping to idx 0, role=user: producerIdx=0 命中', () => {
+      // q1._ts=t1 → R1 → opus-4-7（user 不需要 -1）
+      const info = resolveProducerModelInfo('t1', 'user', tsToIndex, modelNameByReqIdx);
+      assert.equal(info.name, 'opus-4-7');
     });
   });
 

@@ -9,7 +9,7 @@ import ImageLightbox from './ImageLightbox';
 import GitChanges from './GitChanges';
 import GitDiffView from './GitDiffView';
 import ToolApprovalPanel from './ToolApprovalPanel';
-import { getModelInfo, getEffectiveModel } from '../utils/helpers';
+import { getModelInfo, getEffectiveModel, resolveProducerModelInfo } from '../utils/helpers';
 import { getTeammateAvatar } from '../utils/teammateAvatars';
 import { isSystemText, classifyUserContent, isMainAgent, isTeammate, resolveTeammateNames } from '../utils/contentFilter';
 import { classifyRequest, formatRequestTag, formatTeammateLabel } from '../utils/requestType';
@@ -854,7 +854,7 @@ class ChatView extends React.Component {
       const ts = msg._timestamp || null;
       const reqIdx = ts ? tsToIndex[ts] : undefined;
       const viewReqProps = reqIdx != null && onViewRequest ? { requestIndex: reqIdx, onViewRequest } : EMPTY_OBJ;
-      const modelInfo = resolveModelInfo(ts);
+      const modelInfo = resolveModelInfo(ts, msg.role);
 
       if (msg.role === 'user') {
         if (Array.isArray(content)) {
@@ -1108,16 +1108,14 @@ class ChatView extends React.Component {
       cache.subAgentProcessedCount = requests.length;
     }
     const tsToIndex = cache.tsToIndex;
+    // globalModelInfo 仅给 line ~1342 的 lastResponse 路径（最新一轮 response 渲染）使用，
+    // 1v1 per-message 解析不再回落到此值 —— 避免历史 logo 被最新 entry 模型污染。
     const globalModelInfo = getModelInfo(cache.modelName);
-    // per-message resolver：按 msg._timestamp 查 tsToIndex → modelNameByReqIdx
-    // 未匹配 ts 或索引缺失时回落到 globalModelInfo（与旧行为等价）
-    const resolveModelInfo = (ts) => {
-      if (!ts) return globalModelInfo;
-      const idx = tsToIndex[ts];
-      if (idx == null) return globalModelInfo;
-      const name = cache.modelNameByReqIdx[idx];
-      return name ? getModelInfo(name) : globalModelInfo;
-    };
+    // Per-message resolver：1v1 严格遵从，未匹配返回 null（ChatMessage 显示中性 'MainAgent'）。
+    // assistant message 的 _timestamp 实际指向【下一轮 entry】的 ts（详见
+    // src/AppBase.jsx:184-186, src/utils/sessionMerge.js:44/50），所以 producer
+    // req idx = idx - 1；user message producer idx = idx。
+    const resolveModelInfo = (ts, role) => resolveProducerModelInfo(ts, role, tsToIndex, cache.modelNameByReqIdx);
     const subAgentEntries = cache.subAgentEntries;
 
     const allItems = [];
