@@ -225,6 +225,14 @@
   transition: background 0.15s, color 0.15s;
 }
 
+.navDivider {
+  width: 60%;
+  height: 0;
+  border: 0;
+  border-top: 1px dashed var(--border-primary);
+  margin: 6px auto;
+}
+
 .navBtnActive:hover {
   background: var(--color-primary-bg-medium);
   color: var(--color-info-light);

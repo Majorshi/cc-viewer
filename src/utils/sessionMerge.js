@@ -1,7 +1,9 @@
+import { isPostClearCheckpoint } from './clearCheckpoint.js';
+
 /**
  * 增量合并 mainAgent sessions。
  * - 同 session 更新：push 新消息（保持 messages 引用稳定）或 checkpoint 重建
- * - 新 session：追加新 session 对象
+ * - 新 session：追加新 session 对象（异 user 或 /clear checkpoint）
  * - Transient 过滤：极短消息跳过合并（仅批量加载场景）
  *
  * @param {Array} prevSessions - 当前 sessions 数组
@@ -28,6 +30,16 @@ export function mergeMainAgentSessions(prevSessions, entry, options = {}) {
   const prevMsgCount = lastSession.messages ? lastSession.messages.length : 0;
   const isNewConversation = prevMsgCount > 0 && newMessages.length < prevMsgCount * 0.5 && (prevMsgCount - newMessages.length) > 4;
   const sameUser = userId !== null && userId === lastSession.userId;
+
+  // /clear 后的首个 checkpoint：始终是新会话起点。
+  // 同 device 下 sameUser 永远 true，否则会被下面的 same-session 分支吞掉；
+  // 也不能被 transient 过滤掉（即便 newMessages.length === 1）。
+  if (isPostClearCheckpoint(entry, prevMsgCount)) {
+    for (let i = 0; i < newMessages.length; i++) {
+      if (!newMessages[i]._timestamp) newMessages[i]._timestamp = entryTimestamp;
+    }
+    return [...prevSessions, { userId, messages: newMessages, response: newResponse, entryTimestamp }];
+  }
 
   if (!options.skipTransientFilter && isNewConversation && newMessages.length <= 4 && prevMsgCount > 4) {
     return prevSessions;

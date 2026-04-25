@@ -422,6 +422,180 @@ describe('transient boundary: exactly 5 messages', () => {
   });
 });
 
+// ─── 9. /clear checkpoint detection (regression for 16:12:11 → 16:15:11 misplacement) ──
+
+describe('post-/clear checkpoint creates new session entry', () => {
+  // 构造 /clear 后的真实首请求结构：
+  // _isCheckpoint=true, msg[0] 含 <command-name>/clear</command-name>。
+  // 同 device → sameUser=true，旧逻辑会被吞进同 session（或被 transient 丢掉），
+  // 新逻辑必须创建新 session 且 _timestamp 用 entry 自己的 ts。
+  function makeClearEntry(opts = {}) {
+    const userBlock = {
+      role: 'user',
+      content: [
+        { type: 'text', text: '<system-reminder>session start</system-reminder>' },
+        { type: 'text', text: '<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>\n' },
+        { type: 'text', text: '<local-command-stdout></local-command-stdout>' },
+        { type: 'text', text: 'hello after clear' },
+      ],
+    };
+    return {
+      timestamp: opts.timestamp || '2026-04-25T08:12:11.330Z',
+      mainAgent: true,
+      _deltaFormat: 1,
+      _isCheckpoint: true,
+      _totalMessageCount: 1,
+      body: {
+        messages: [userBlock],
+        metadata: { user_id: 'userId' in opts ? opts.userId : 'user-1' },
+      },
+      response: opts.response || { status: 200, body: { content: [] } },
+    };
+  }
+
+  it('creates a new session entry under batch path (default options) when prev is long same-user session', () => {
+    const longPrev = Array.from({ length: 33 }, (_, i) => makeMsg(i % 2 === 0 ? 'user' : 'assistant', `m${i}`, { _timestamp: '2026-04-25T05:28:00.000Z' }));
+    const session = makeSession(longPrev, { userId: 'user-1', entryTimestamp: '2026-04-25T05:29:00.000Z' });
+
+    const entry = makeClearEntry({ timestamp: '2026-04-25T08:12:11.330Z' });
+
+    // 旧逻辑：transient 过滤吞掉（newLen=1, prev=33）→ 旧 session 不动，新 entry 丢失。
+    // 新逻辑：必须先于 transient 过滤识别为 /clear，创建新 session。
+    const result = mergeMainAgentSessions([session], entry);
+
+    assert.equal(result.length, 2, '应当生成两个 session（旧 deepseek + 新 /clear）');
+    assert.equal(result[0].messages.length, 33, '旧 session 不动');
+    assert.equal(result[1].messages.length, 1, '新 session 包含 /clear 那条 msg');
+    assert.equal(result[1].messages[0]._timestamp, '2026-04-25T08:12:11.330Z', '_timestamp 必须是 entry 自己的 ts');
+    assert.equal(result[1].entryTimestamp, '2026-04-25T08:12:11.330Z');
+    assert.equal(result[1].userId, 'user-1');
+  });
+
+  it('also creates a new session under SSE path with skipTransientFilter:true', () => {
+    const longPrev = Array.from({ length: 33 }, (_, i) => makeMsg(i % 2 === 0 ? 'user' : 'assistant', `m${i}`));
+    const session = makeSession(longPrev, { userId: 'user-1' });
+    const entry = makeClearEntry({ timestamp: '2026-04-25T08:12:11.330Z' });
+
+    const result = mergeMainAgentSessions([session], entry, { skipTransientFilter: true });
+
+    assert.equal(result.length, 2);
+    assert.equal(result[1].messages[0]._timestamp, '2026-04-25T08:12:11.330Z');
+  });
+
+  it('does NOT split when checkpoint shrinks but msg[0] lacks /clear marker (e.g. /compact summary)', () => {
+    const longPrev = Array.from({ length: 30 }, (_, i) => makeMsg(i % 2 === 0 ? 'user' : 'assistant', `m${i}`));
+    const session = makeSession(longPrev, { userId: 'user-1' });
+
+    // /compact 后的首请求：msg[0] 是 user 的 summary block，没有 /clear 命令标记
+    const compactEntry = {
+      timestamp: '2026-04-25T08:14:35.954Z',
+      mainAgent: true,
+      _deltaFormat: 1,
+      _isCheckpoint: true,
+      _totalMessageCount: 2,
+      body: {
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: "The following is the user's CLAUDE.md configuration..." }] },
+          { role: 'user', content: [{ type: 'text', text: 'continue' }] },
+        ],
+        metadata: { user_id: 'user-1' },
+      },
+      response: { status: 200, body: {} },
+    };
+
+    const result = mergeMainAgentSessions([session], compactEntry, { skipTransientFilter: true });
+
+    // 不是 /clear → 走原 same-session checkpoint 分支（替换 messages，不创建新 session）
+    assert.equal(result.length, 1, '/compact 不应该创建新 session');
+    assert.equal(result[0].messages.length, 2);
+  });
+
+  it('does NOT split for incremental re-snapshot (count >= prevCount, even if msg[0] still has /clear)', () => {
+    // 已经有一个 /clear 后的 session（2 条 msg）
+    const m0WithClear = { role: 'user', content: [{ type: 'text', text: '<command-name>/clear</command-name>\nhello' }] };
+    const prevMsgs = [m0WithClear, makeMsg('assistant', 'hi')];
+    const session = makeSession(prevMsgs, { userId: 'user-1' });
+
+    // 后续的 17-msg 再快照：msg[0] 还是含 /clear（CC 始终重发会话前缀），
+    // 但 count(17) >= prevCount(2) → 同会话的再快照，不是新 /clear
+    const grew = [m0WithClear, ...Array.from({ length: 16 }, (_, i) => makeMsg(i % 2 === 0 ? 'assistant' : 'user', `g${i}`))];
+    const reSnapshot = {
+      timestamp: '2026-04-25T08:16:48.846Z',
+      mainAgent: true,
+      _deltaFormat: 1,
+      _isCheckpoint: true,
+      _totalMessageCount: 17,
+      body: { messages: grew, metadata: { user_id: 'user-1' } },
+      response: { status: 200, body: {} },
+    };
+
+    const result = mergeMainAgentSessions([session], reSnapshot, { skipTransientFilter: true });
+
+    assert.equal(result.length, 1, '同会话再快照不应该创建新 session');
+    assert.equal(result[0].messages.length, 17);
+  });
+
+  it('two consecutive /clear commands create two distinct sessions', () => {
+    // 罕见但合理：用户在 /clear 后立即又 /clear
+    // 第一个 /clear 创建 session #2，messages.length=1。
+    // 第二个 /clear（_isCheckpoint=true, msg.length=1, msg[0] 含 /clear marker）
+    // 必须满足 isPostClearCheckpoint 的 shrink 条件：msgs.length(1) < prevCount(1) → FALSE
+    // → 不应再创建 session #3，而是走 same-session checkpoint 替换 messages 引用。
+    // 这条用例锁死该语义：连续 /clear 不会无限增殖 session 条目。
+    const longPrev = Array.from({ length: 33 }, (_, i) => makeMsg(i % 2 === 0 ? 'user' : 'assistant', `m${i}`));
+    const session = makeSession(longPrev, { userId: 'user-1' });
+
+    const firstClear = makeClearEntry({ timestamp: '2026-04-25T08:12:11.330Z' });
+    const afterFirst = mergeMainAgentSessions([session], firstClear);
+    assert.equal(afterFirst.length, 2, '第一次 /clear 创建新 session');
+    assert.equal(afterFirst[1].messages.length, 1);
+
+    const secondClear = makeClearEntry({ timestamp: '2026-04-25T08:13:00.000Z' });
+    const afterSecond = mergeMainAgentSessions(afterFirst, secondClear);
+
+    // 期望：sessions 仍是 2 条（不再分裂），第二条 session 被 same-session checkpoint 替换为新 msgs
+    assert.equal(afterSecond.length, 2, '连续 /clear 不应无限增殖 session');
+    assert.equal(afterSecond[1].messages.length, 1);
+    assert.equal(afterSecond[1].entryTimestamp, '2026-04-25T08:13:00.000Z', 'entryTimestamp 更新到第二次 /clear');
+  });
+
+  it('handles entry.timestamp === null gracefully in /clear path', () => {
+    const longPrev = Array.from({ length: 30 }, (_, i) => makeMsg(i % 2 === 0 ? 'user' : 'assistant', `m${i}`));
+    const session = makeSession(longPrev, { userId: 'user-1' });
+
+    const entry = makeClearEntry({ timestamp: null });
+    entry.timestamp = null; // 明确 null
+
+    const result = mergeMainAgentSessions([session], entry);
+
+    assert.equal(result.length, 2);
+    assert.equal(result[1].messages[0]._timestamp, null, '_timestamp 应为 null（非 undefined）');
+    assert.equal(result[1].entryTimestamp, null);
+  });
+
+  it('does NOT split when entry has no _isCheckpoint flag (legacy non-delta log)', () => {
+    const longPrev = Array.from({ length: 30 }, (_, i) => makeMsg(i % 2 === 0 ? 'user' : 'assistant', `m${i}`));
+    const session = makeSession(longPrev, { userId: 'user-1' });
+
+    // 旧格式日志：没有 _isCheckpoint，但 msg[0] 含 /clear
+    const legacyEntry = {
+      timestamp: '2026-04-25T08:12:11.330Z',
+      mainAgent: true,
+      body: {
+        messages: [{ role: 'user', content: [{ type: 'text', text: '<command-name>/clear</command-name>\nhi' }] }],
+        metadata: { user_id: 'user-1' },
+      },
+      response: { status: 200, body: {} },
+    };
+
+    const result = mergeMainAgentSessions([session], legacyEntry, { skipTransientFilter: true });
+
+    // 没有 _isCheckpoint → 不触发新逻辑，走原 same-session checkpoint 替换
+    assert.equal(result.length, 1, '旧格式日志保持原行为');
+    assert.equal(result[0].messages.length, 1);
+  });
+});
+
 describe('null timestamp in entry', () => {
   it('assigns null _timestamp to new messages without crashing', () => {
     const existingMsgs = [makeMsg('user', 'q1')];

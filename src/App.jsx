@@ -27,6 +27,8 @@ class App extends AppBase {
       currentTab: 'context',
       pendingCacheHighlight: null,
     });
+    this.appHeaderRef = React.createRef();
+    this._getTokenStatsContent = () => this.appHeaderRef.current?.renderTokenStats?.() ?? null;
   }
 
   componentDidMount() {
@@ -314,6 +316,7 @@ class App extends AppBase {
         <Layout className={styles.layout} ref={this._layoutRef} onDragOver={this._onDragOver} onDragLeave={this._onDragLeave} onDrop={this._onDrop}>
           <Layout.Header className={styles.header}>
             <AppHeader
+              ref={this.appHeaderRef}
               requestCount={filteredRequests.length}
               requests={filteredRequests}
               viewMode={viewMode}
@@ -443,7 +446,7 @@ class App extends AppBase {
               )
             )}
             <div className={styles.chatViewWrapper} style={{ display: viewMode === 'chat' ? 'flex' : 'none' }}>
-              <ChatView requests={filteredRequests} mainAgentSessions={mainAgentSessions} streamingLatest={this.state.streamingLatest} userProfile={this.state.userProfile} collapseToolResults={this.state.collapseToolResults} expandThinking={this.state.expandThinking} showFullToolContent={this.state.showFullToolContent} showThinkingSummaries={this.state.showThinkingSummaries} onViewRequest={this.handleViewRequest} scrollToTimestamp={this.state.chatScrollToTs} onScrollTsDone={this.handleScrollTsDone} cliMode={this._isLocalLog ? false : this.state.cliMode} sdkMode={this._isLocalLog ? false : this.state.sdkMode} terminalVisible={this._isLocalLog ? false : (this.state.sdkMode ? false : this.state.terminalVisible)} onToggleTerminal={() => this.setState(prev => ({ terminalVisible: !prev.terminalVisible }))} pendingUploadPaths={this.state.pendingUploadPaths} onUploadPathsConsumed={this.handleUploadPathsConsumed} fileLoading={this.state.fileLoading} isStreaming={this.state.isStreaming} hasMoreHistory={this.state.hasMoreHistory} loadingMore={this.state.loadingMore} onLoadMoreHistory={() => this.loadMoreHistory()} loadingSessionId={this.state.loadingSessionId} onLoadSession={(sid) => this.loadSession(sid)} lang={this.state.lang} autoApproveSeconds={this.state.autoApproveSeconds} onAutoApproveChange={this.handleAutoApproveChange} />
+              <ChatView getTokenStatsContent={this._getTokenStatsContent} requests={filteredRequests} mainAgentSessions={mainAgentSessions} streamingLatest={this.state.streamingLatest} userProfile={this.state.userProfile} collapseToolResults={this.state.collapseToolResults} expandThinking={this.state.expandThinking} showFullToolContent={this.state.showFullToolContent} showThinkingSummaries={this.state.showThinkingSummaries} onViewRequest={this.handleViewRequest} scrollToTimestamp={this.state.chatScrollToTs} onScrollTsDone={this.handleScrollTsDone} cliMode={this._isLocalLog ? false : this.state.cliMode} sdkMode={this._isLocalLog ? false : this.state.sdkMode} terminalVisible={this._isLocalLog ? false : (this.state.sdkMode ? false : this.state.terminalVisible)} onToggleTerminal={() => this.setState(prev => ({ terminalVisible: !prev.terminalVisible }))} pendingUploadPaths={this.state.pendingUploadPaths} onUploadPathsConsumed={this.handleUploadPathsConsumed} fileLoading={this.state.fileLoading} isStreaming={this.state.isStreaming} hasMoreHistory={this.state.hasMoreHistory} loadingMore={this.state.loadingMore} onLoadMoreHistory={() => this.loadMoreHistory()} loadingSessionId={this.state.loadingSessionId} onLoadSession={(sid) => this.loadSession(sid)} lang={this.state.lang} autoApproveSeconds={this.state.autoApproveSeconds} onAutoApproveChange={this.handleAutoApproveChange} />
             </div>
           </Layout.Content>
           <div className={styles.footer}>

@@ -70,19 +70,6 @@
   line-height: 0;
 }
 
-/* Token stats tag */
-.tokenStatsTag {
-  border-radius: 12px;
-  cursor: pointer;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-hover);
-  color: var(--text-secondary);
-}
-
-.tokenStatsIcon {
-  margin-right: 4px;
-}
-
 /* Live monitoring tag */
 .liveTag {
   position: relative;

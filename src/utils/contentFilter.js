@@ -123,6 +123,9 @@ function _isMainAgentImpl(req) {
   return false;
 }
 
+// /clear checkpoint 检测：抽到独立无依赖模块，便于 node --test 直接 import。
+export { isPostClearCheckpoint } from './clearCheckpoint.js';
+
 // ============== 文本内容过滤 ==============
 
 /**

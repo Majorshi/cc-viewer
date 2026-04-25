@@ -7,7 +7,7 @@ import OpenFolderIcon from './components/OpenFolderIcon';
 import { t, getLang, setLang } from './i18n';
 import { setClaudeConfigDir } from './utils/tClaude';
 import { formatTokenCount, filterRelevantRequests, isRelevantRequest, appendCacheLossMap, extractCachedContent } from './utils/helpers';
-import { isMainAgent } from './utils/contentFilter';
+import { isMainAgent, isPostClearCheckpoint } from './utils/contentFilter';
 import { apiUrl } from './utils/apiUrl';
 import { saveEntries, loadEntries, clearEntries, getCacheMeta, saveSessionEntries, loadSessionEntries, saveSessionIndex } from './utils/entryCache';
 import { buildSessionIndex, splitHotCold, mergeSessionIndices, HOT_SESSION_COUNT } from './utils/sessionManager';
@@ -168,13 +168,18 @@ class AppBase extends React.Component {
         const timestamp = entry.timestamp || new Date().toISOString();
 
         const prevCount = timestamps.length;
-        const isNewSession = prevCount > 0 && (
+        // /clear 后的首个 checkpoint：必须当成新会话起点，绕过 transient 过滤。
+        // 否则 delta 重建后第一个条目（count=1）会被 isTransient 吞掉，
+        // 导致 /clear 标记+用户输入的 _timestamp 被后面第一个 count>4 的条目"挪走"。
+        const postClearCheckpoint = isPostClearCheckpoint(entry, prevCount);
+        const isNewSession = postClearCheckpoint || (prevCount > 0 && (
           (count < prevCount * 0.5 && (prevCount - count) > 4) ||
           (prevUserId && userId && userId !== prevUserId)
-        );
+        ));
         // Transient 保护：极短 entry（<=4 msgs）在长对话后不应重置 timestamps 累积
-        // 这些通常是中间态请求（request body 只有 user message，尚未拿到 response）
-        const isTransient = isNewSession && count <= 4 && prevCount > 4 && count < prevCount * 0.5;
+        // 这些通常是中间态请求（request body 只有 user message，尚未拿到 response）。
+        // postClearCheckpoint 是真实的会话起点，必须豁免。
+        const isTransient = isNewSession && !postClearCheckpoint && count <= 4 && prevCount > 4 && count < prevCount * 0.5;
         if (isNewSession && !isTransient) {
           currentSessionId = timestamp;
           timestamps = [];
@@ -1043,7 +1048,10 @@ class AppBase extends React.Component {
 
           const userId = entry.body.metadata?.user_id || null;
           const sameUser = userId !== null && lastSession?.userId === userId;
-          const isNewSession = !sameUser && prevCount > 0 && messages.length < prevCount * 0.5 && (prevCount - messages.length) > 4;
+          // /clear 后首个 checkpoint：同 device 下 sameUser 永远 true，会让 isNewSession 失效，
+          // 导致 L1058 的 inheritance 把旧 session 的 _timestamp 灌到新 /clear 后的 msg 上。
+          const postClearCheckpoint = isPostClearCheckpoint(entry, prevCount);
+          const isNewSession = postClearCheckpoint || (!sameUser && prevCount > 0 && messages.length < prevCount * 0.5 && (prevCount - messages.length) > 4);
 
           // SSE 实时流每条 entry 都是完整 request+response，不存在"中间态"；
           // 历史代码曾在此处 `if (isTransient) continue` 跳过极短 entry 防中间态污染，

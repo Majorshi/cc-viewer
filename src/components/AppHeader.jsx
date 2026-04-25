@@ -1363,17 +1363,6 @@ class AppHeader extends React.Component {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${styles.logoImage}${this.state.logoDropdownOpen ? ` ${styles.logoImageActive}` : ''}`}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </span>
           </Dropdown>
-          <Popover
-            content={() => this.renderTokenStats()}
-            trigger="hover"
-            placement="bottomLeft"
-            overlayInnerStyle={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-hover)', borderRadius: 8, padding: '8px 8px', maxHeight: '80vh', overflowY: 'auto' }}
-          >
-            <Tag className={styles.tokenStatsTag}>
-              <DashboardOutlined className={styles.tokenStatsIcon} />
-              {t('ui.tokenStats')}
-            </Tag>
-          </Popover>
           {this.props.activeProxyId && this.props.activeProxyId !== 'max' && (() => {
             const p = (this.props.proxyProfiles || []).find(x => x.id === this.props.activeProxyId);
             return p ? (
