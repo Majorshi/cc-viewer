@@ -24,20 +24,15 @@
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### 编程模式
+### 启动方式
 
 ccv 是 claude 的直接替身，所有参数透传给 claude，同时启动 Web Viewer。
 
 ```bash
 ccv                    # == claude（交互模式）
-ccv -c                 # == claude --continue（继续上次对话）
-ccv -r                 # == claude --resume（恢复对话）
-ccv -p "hello"         # == claude --print "hello"（打印模式）
-ccv --d                # == claude --dangerously-skip-permissions（快捷方式）
-ccv --model opus       # == claude --model opus
 ```
 
-作者本人常用的命令是
+作者本人最常用的命令是
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
 ```
