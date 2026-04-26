@@ -20,6 +20,8 @@ import styles from './App.module.css';
 export { styles };
 
 export const MAX_SESSIONS = (isMobile && !isPad) ? 30 : 100;
+// /clear 后乐观水位：把上下文血条压到这个百分比，下一次 context_window SSE 推送会自动覆盖回真实值
+export const OPTIMISTIC_CLEAR_PERCENT = 5;
 
 /**
  * 共享基类：包含 PC 和 Mobile 通用的状态管理、SSE 通信、数据处理、偏好设置等逻辑。
@@ -76,6 +78,7 @@ class AppBase extends React.Component {
       updateInfo: null,
       pendingUploadPaths: [],
       contextWindow: null,
+      contextBarOptimistic: false, // /clear 后的乐观水位重置，下一次 context_window SSE 自动清除
       isStreaming: false,
       streamingLatest: null, // { timestamp, url, content, model } — Live typewriter overlay for latest assistant message
       hasMoreHistory: false,
@@ -392,6 +395,7 @@ class AppBase extends React.Component {
     if (this._sseReconnectTimer) clearTimeout(this._sseReconnectTimer);
     if (this._streamingOffTimer) clearTimeout(this._streamingOffTimer);
     if (this._streamingRaf) { cancelAnimationFrame(this._streamingRaf); this._streamingRaf = null; }
+    if (this._clearOptimisticTimer) clearTimeout(this._clearOptimisticTimer);
     this._pendingStreamingLatest = null;
   }
 
@@ -829,7 +833,8 @@ class AppBase extends React.Component {
         this._resetSSETimeout();
         try {
           const data = JSON.parse(event.data);
-          this.setState({ contextWindow: data });
+          this.setState({ contextWindow: data, contextBarOptimistic: false });
+          if (this._clearOptimisticTimer) { clearTimeout(this._clearOptimisticTimer); this._clearOptimisticTimer = null; }
         } catch { }
       });
       this.eventSource.addEventListener('kv_cache_content', (event) => {
@@ -1225,6 +1230,17 @@ class AppBase extends React.Component {
 
   handleScrollDone = () => { this.setState({ scrollCenter: false }); };
   handleScrollTsDone = () => { this.setState({ chatScrollToTs: null }); };
+  // 用户点 /clear 时立即把 Header 上下文血条降到 OPTIMISTIC_CLEAR_PERCENT 水位；
+  // 正常路径下一次 context_window SSE 推送会自动取消。
+  // 30s 兜底：SSE 没及时来（PTY 未连接、后端没推、CLI 崩了）时自动清掉，避免血条卡在低位。
+  handleClearContextOptimistic = () => {
+    this.setState({ contextBarOptimistic: true });
+    if (this._clearOptimisticTimer) clearTimeout(this._clearOptimisticTimer);
+    this._clearOptimisticTimer = setTimeout(() => {
+      this.setState({ contextBarOptimistic: false });
+      this._clearOptimisticTimer = null;
+    }, 30000);
+  };
 
   // ─── 模式切换 ──────────────────────────────────────────
 

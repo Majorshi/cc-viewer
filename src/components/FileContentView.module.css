@@ -287,25 +287,38 @@
 .markdownPreview img { max-width: 100%; height: auto; border-radius: 6px; }
 .markdownPreview input[type="checkbox"] { margin-right: 6px; }
 
+/* 保存按钮跟左侧 .viewToggleBtn / .closeBtn 对齐到 28px 高：
+   min-height + box-sizing 把外形锁住，不被字号或 SVG 抬高；
+   padding/gap/line-height 都跟 .viewToggleBtn 同档，视觉齐平。 */
 .saveBtn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 12px;
+  gap: 4px;
+  padding: 4px 10px;
+  min-height: 28px;
+  box-sizing: border-box;
   border: 1px solid var(--border-hover);
   background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: 12px;
+  line-height: 18px;
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 
+/* 激活（有未保存改动 → !disabled）时蓝字蓝边框，引导用户去点。
+   disabled 与 enabled 视觉对比变成 "灰 vs 蓝"，比之前 "灰 vs 灰带不透明度" 显眼得多。 */
+.saveBtn:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
 .saveBtn:hover:not(:disabled) {
-  background: var(--bg-surface);
-  color: var(--text-white);
-  border-color: var(--border-light);
+  background: var(--color-primary-bg-light);
+  color: var(--color-primary-dark);
+  border-color: var(--color-primary);
 }
 
 .saveBtn:disabled {

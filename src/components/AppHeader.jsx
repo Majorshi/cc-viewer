@@ -12,6 +12,7 @@ import { apiUrl } from '../utils/apiUrl';
 import ConceptHelp from './ConceptHelp';
 import OpenFolderIcon from './OpenFolderIcon';
 import appConfig from '../config.json';
+import { OPTIMISTIC_CLEAR_PERCENT } from '../AppBase';
 const CALIBRATION_MODELS = appConfig.calibrationModels;
 import styles from './AppHeader.module.css';
 
@@ -135,6 +136,7 @@ class AppHeader extends React.Component {
       nextProps.sdkMode !== this.props.sdkMode ||
       nextProps.terminalVisible !== this.props.terminalVisible ||
       nextProps.contextWindow !== this.props.contextWindow ||
+      nextProps.contextBarOptimistic !== this.props.contextBarOptimistic ||
       nextProps.serverCachedContent !== this.props.serverCachedContent ||
       nextProps.resumeAutoChoice !== this.props.resumeAutoChoice ||
       nextProps.themeColor !== this.props.themeColor ||
@@ -1294,7 +1296,7 @@ class AppHeader extends React.Component {
   }
 
   render() {
-    const { requestCount, requests = [], viewMode, cacheType, onToggleViewMode, onImportLocalLogs, onLangChange, isLocalLog, localLogFile, projectName, collapseToolResults, onCollapseToolResultsChange, expandThinking, onExpandThinkingChange, showFullToolContent, onShowFullToolContentChange, expandDiff, onExpandDiffChange, filterIrrelevant, onFilterIrrelevantChange, logDir, onLogDirChange, updateInfo, onDismissUpdate, cliMode, terminalVisible, onToggleTerminal, onReturnToWorkspaces, contextWindow, serverCachedContent, resumeAutoChoice, onResumeAutoChoiceToggle, onResumeAutoChoiceChange, themeColor, onThemeColorChange, autoApproveSeconds, onAutoApproveChange } = this.props;
+    const { requestCount, requests = [], viewMode, cacheType, onToggleViewMode, onImportLocalLogs, onLangChange, isLocalLog, localLogFile, projectName, collapseToolResults, onCollapseToolResultsChange, expandThinking, onExpandThinkingChange, showFullToolContent, onShowFullToolContentChange, expandDiff, onExpandDiffChange, filterIrrelevant, onFilterIrrelevantChange, logDir, onLogDirChange, updateInfo, onDismissUpdate, cliMode, terminalVisible, onToggleTerminal, onReturnToWorkspaces, contextWindow, contextBarOptimistic, serverCachedContent, resumeAutoChoice, onResumeAutoChoiceToggle, onResumeAutoChoiceChange, themeColor, onThemeColorChange, autoApproveSeconds, onAutoApproveChange } = this.props;
     const { countdownText } = this.state;
 
     const menuItems = [
@@ -1434,6 +1436,8 @@ class AppHeader extends React.Component {
             if (contextPercent === 0 && this._lastContextPercent > 0) {
               contextPercent = this._lastContextPercent;
             }
+            // /clear 后立即把血条压到乐观水位；下一次 SSE context_window 推送会取消这个覆盖
+            if (contextBarOptimistic) contextPercent = OPTIMISTIC_CLEAR_PERCENT;
             const ctxColor = contextPercent >= 80 ? 'var(--color-error-light)' : contextPercent >= 60 ? 'var(--color-warning-light)' : 'var(--color-success)';
 
             return isLocalLog ? (

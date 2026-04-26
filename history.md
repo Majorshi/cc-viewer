@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.6.214 (2026-04-26) — /clear 触发 Header 血条乐观重置 + MdxEditor light 白底 + 保存按钮高亮
+
+### Feat — /clear 后 Header 上下文血条立即乐观重置到低位
+
+**Why**：用户点 `/clear`（ChatView slash 命令路径 / TerminalPanel PTY 路径）后，真实的 `context_window` SSE 推送有几百 ms ~ 数秒延迟，期间 Header 血条仍停在清理前的高水位（70%+），视觉上像没生效。
+
+**做法**：在 AppBase 加 `contextBarOptimistic` state，触发 `/clear` 时立即翻 true，AppHeader / Mobile 渲染血条时若 flag 为 true 直接覆盖 `contextPercent = OPTIMISTIC_CLEAR_PERCENT (5)`；下一次 `context_window` SSE 到达时 `setState({ contextWindow, contextBarOptimistic: false })` 把覆盖摘掉，自然回到真实值。
+
+**韧性**：
+- **30s safety timeout**：SSE 永远不来（PTY 未连接 / 后端没推 / CLI 崩了）时 timer 兜底清 flag，避免血条永远卡 5%。SSE 到 / 重复 /clear / `componentWillUnmount` 都会清旧 timer。
+- **gate 在真发送之后**：`ChatView.jsx` 把回调挪进 `if (textarea)` 块内，`TerminalPanel.jsx` 挪进 `if (ws.readyState === OPEN)` 块内 — ref 为空 / WS 断开时不再误把血条压低。
+- **常量化**：抽 `OPTIMISTIC_CLEAR_PERCENT = 5` 在 `AppBase.jsx`，`Mobile.jsx` / `AppHeader.jsx` import 使用，避免双写飘移。
+
+### Style — MdxEditor 雪山白（light）模式 + 保存按钮高亮引导
+
+- MdxEditor light 模式编辑区 / CodeMirror / 行号 gutter 全部拉到纯 `#FFF`（默认 `--bg-elevated` 在 light 是 `#F9F9F9` 偏灰，编辑器要"纸面"质感）；当前 activeLine / activeLineGutter 浅蓝高亮在 light 模式下去掉（白底纸面下高亮反而成视觉噪音）；dark 模式不受影响。
+- DiffSourceToggleWrapper 简化：去掉 `--bg-base-alt` 浅底 + 左侧 box-shadow（light 模式下跟父级白 toolbar 形成可见灰条），保留 sticky / margin-left:auto 等定位。
+- `_toolbarRoot` 去 `--bg-base-alt`，加 `border-radius: 0`，与编辑区底色统一。
+- FileContentView 保存按钮：高度对齐到 28px（`min-height` + `box-sizing` + `line-height: 18px` 与 `.viewToggleBtn` / `.closeBtn` 同档），SVG 图标 16→14；激活态（`!disabled`，即有未保存改动）改用 primary 蓝字 + 蓝边框，hover 走 primary-bg-light 浅蓝底，与 disabled 灰态形成"灰 vs 蓝"对比，远比之前"灰 vs 灰带不透明度"显眼。
+
+### 受影响文件
+
+- 修改：`src/App.jsx` / `src/AppBase.jsx` / `src/Mobile.jsx` / `src/components/AppHeader.jsx` / `src/components/ChatView.jsx` / `src/components/TerminalPanel.jsx` / `src/components/FileContentView.jsx` / `src/components/FileContentView.module.css` / `src/components/MdxEditorPanel.module.css`
+- 不动：后端、i18n（无新用户文案）、依赖
+
 ## 1.6.213 (2026-04-26) — 文件浏览器 markdown 改用 MDXEditor (GUI WYSIWYG)
 
 ### Feat — 文件浏览器 .md 文件改用 MDXEditor 所见即所得编辑

@@ -73,6 +73,15 @@
   flex-direction: column;
 }
 
+/* 雪山白（light）模式下背景拉到纯 #FFF —— 默认 --bg-elevated 在 light 主题下是
+   #F9F9F9 偏灰，编辑区想要更干净的白底纸面感。
+   .container.light 是 MdxEditorPanel.jsx 在 theme === 'light' 时挂上的类，
+   selector 比单纯的 .container 多一个类，所以可以干净覆盖上面的 --bg-elevated 默认。 */
+.container.light :global(.mdxeditor),
+.container.light :global(.mdxeditor-root-contenteditable) {
+  background: #FFF;
+}
+
 .container :global(.mdxeditor-root-contenteditable) {
   flex: 1;
   overflow: auto;
@@ -386,8 +395,8 @@
    "盖"在被滚出视野的 toolbar items 上，跟 MDXEditor 官方行为一致。
    position: relative 给内部 sticky 元素提供定位上下文。 */
 .container :global([class*='_toolbarRoot']) {
-  background: var(--bg-base-alt);
   border-bottom: 1px solid var(--border-secondary);
+  border-radius: 0;
   padding: 6px 8px;
   gap: 4px;
   flex-wrap: nowrap;
@@ -396,19 +405,17 @@
   position: relative;
 }
 
-/* DiffSourceToggleWrapper 的 SegmentedControl：sticky 钉死右侧 */
+/* DiffSourceToggleWrapper 的 SegmentedControl：sticky 钉死右侧。
+   不加 background/box-shadow —— light 模式下父级 toolbar 已是白底，
+   再加灰底/渐变会形成可见的灰条；让它直接透明压在右上角即可。 */
 .container :global([class*='_diffSourceToggleWrapper']) {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   position: sticky;
   right: 0;
-  background: var(--bg-base-alt);
-  padding-left: 12px;
   flex-shrink: 0;
   z-index: 1;
-  /* 左侧渐变阴影：暗示有 toolbar items 被遮在下方 */
-  box-shadow: -8px 0 8px -4px rgba(0, 0, 0, 0.08);
 }
 
 .container :global([class*='_diffSourceToggle']) {
@@ -594,6 +601,22 @@
 
 .container :global(.cm-editor .cm-activeLineGutter) {
   background: var(--color-primary-bg-light);
+}
+
+/* 雪山白（light）模式下：
+   - 代码块整体（外框 + .cm-editor + 行号 gutter）全部拉到纯 #FFF，
+     默认 --bg-code 在 light 主题下是 #F5F5F5 偏灰。
+   - 当前激活行（cursor 所在那一行）的浅蓝高亮去掉——白底纸面下这条
+     高亮反而成了"首行有背景"的视觉噪音；dark 模式保持原来的活动行高亮。 */
+.container.light :global([class*='_codeMirrorWrapper']),
+.container.light :global(.cm-editor),
+.container.light :global(.cm-editor .cm-gutters) {
+  background: #FFF;
+}
+
+.container.light :global(.cm-editor .cm-activeLine),
+.container.light :global(.cm-editor .cm-activeLineGutter) {
+  background: transparent;
 }
 
 

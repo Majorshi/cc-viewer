@@ -3401,6 +3401,7 @@ class ChatView extends React.Component {
                     if (textarea) {
                       textarea.value = '/clear';
                       this.setState({ inputEmpty: false, pendingImages: [] }, () => this.handleInputSend());
+                      this.props.onClearContextOptimistic?.();
                     }
                   },
                 });
@@ -3473,6 +3474,7 @@ class ChatView extends React.Component {
                 onClearPendingImages={this._clearPendingImages}
                 modelName={this._reqScanCache?.modelName}
                 getChatScroller={() => this._getScrollContainer()}
+                onClearContextOptimistic={this.props.onClearContextOptimistic}
                 />
               </div>
             </>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { ConfigProvider, Spin, Button, Badge, Switch, Select, Modal, message } from 'antd';
 import { BranchesOutlined, DownloadOutlined, DeleteOutlined, RollbackOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
-import AppBase, { styles } from './AppBase';
+import AppBase, { styles, OPTIMISTIC_CLEAR_PERCENT } from './AppBase';
 import { isIOS, isPad, setViewMode } from './env';
 import { isMainAgent, isSystemText, classifyUserContent } from './utils/contentFilter';
 import { getModelMaxTokens, getEffectiveModel } from './utils/helpers';
@@ -387,6 +387,8 @@ class Mobile extends AppBase {
               }
               if (contextPercent === 0 && this._lastContextPercent > 0) contextPercent = this._lastContextPercent;
               else this._lastContextPercent = contextPercent;
+              // /clear 后立即把血条压到乐观水位；下一次 SSE context_window 推送会取消这个覆盖
+              if (this.state.contextBarOptimistic) contextPercent = OPTIMISTIC_CLEAR_PERCENT;
               const ctxColor = contextPercent >= 80 ? 'var(--color-error-light)' : contextPercent >= 60 ? 'var(--color-warning-light)' : 'var(--color-success)';
               const ctxLabel = `${t('ui.liveMonitoring')}${this.state.projectName ? `: ${this.state.projectName}` : ''}`;
               return (
@@ -543,6 +545,7 @@ class Mobile extends AppBase {
                     pendingUploadPaths={this.state.pendingUploadPaths}
                     onUploadPathsConsumed={this.handleUploadPathsConsumed}
                     onMobileOpenFile={this._handleMobileOpenFile}
+                    onClearContextOptimistic={this.handleClearContextOptimistic}
                   />
                 </div>
               </ConfigProvider>
@@ -556,6 +559,7 @@ class Mobile extends AppBase {
                 pendingImages={this.state.terminalPendingImages}
                 onRemovePendingImage={this._handleRemoveTerminalImage}
                 onClearPendingImages={this._handleClearTerminalImages}
+                onClearContextOptimistic={this.handleClearContextOptimistic}
               />
             </div>
           )}

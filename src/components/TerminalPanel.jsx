@@ -963,6 +963,7 @@ class TerminalPanel extends React.Component {
   handleClearContext = () => {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'input', data: `\x1b[200~/clear\x1b[201~\r` }));
+      this.props.onClearContextOptimistic?.();
     }
     if ((!isMobile || isPad) && this.terminal) this.terminal.focus();
   };
