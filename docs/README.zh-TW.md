@@ -1,45 +1,46 @@
 # CC-Viewer
 
-一套從 15+ 年網際網路產業研發經驗中提煉出來、建構於 Claude Code 之上的 Vibe Coding 工具包：
+基於 Claude Code、提煉自身開發經驗、沉澱而成的 Vibe Coding 工具：
 
-1. 在本機執行 /ultraPlan 與 /ultraReview，讓你的程式碼不必完全暴露給 Claude 的雲端；
-2. 透過本機網路實現行動裝置程式設計（可由使用者擴充）；
-3. 完整攔截並分析 Claude Code 的封包 —— 非常適合日誌記錄、除錯、學習與逆向工程；
-4. 內建累積的學習筆記與實戰經驗（在整個應用程式中尋找「?」圖示），讓我們可以一起探索與成長；
-5. Web UI 可適應各種尺寸模式 —— 可放入瀏覽器擴充功能、作業系統分割畫面以及任何嵌入場景；同時也提供原生安裝程式。
+1. 提升能力上限，可在本機執行 /ultraPlan、/ultraReview，避免將專案程式碼完全暴露給 Claude 雲端；
+2. 多端同時適配，可在區域網路內實現行動裝置程式設計，Web 版自適應各種場景，方便嵌入瀏覽器擴充功能、作業系統分割畫面，並提供原生安裝程式；
+3. 完整日誌留痕，提供 Claude Code 完整封包攔截分析能力，方便記錄日誌、分析問題、學習借鑑、逆向研發；
+4. 學習經驗分享，沉澱了大量學習資料與開發經驗（詳見系統各處的「?」圖示）；
+5. 保持原生體驗，僅對 Claude Code 能力進行增強，對核心無任何實質性修改，保持原生體驗；
+6. 適配三方模型，已適配 deepseek-v4-*、GLM 5.1、Kimi K2.6，內建 cc-switch 能力，可隨時熱切第三方工具。
 
 [English](../README.md) | [简体中文](./README.zh.md) | 繁體中文 | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | [Dansk](./README.da.md) | [Polski](./README.pl.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## 使用方式
 
-### 安裝
+### 前提
+
+- 請確認已安裝 Node.js 22.0.0+；[下載安裝](https://nodejs.org)
+- 請確認已安裝 Claude Code；[安裝教學](https://github.com/anthropics/claude-code)
+
+### 安裝 ccv
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### 程式設計模式
+### 啟動方式
 
 ccv 是 claude 的直接替代品 —— 所有參數都會傳遞給 claude，同時啟動 Web Viewer。
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-作者最常用的指令是：
+作者本人最常用的指令是：
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv 透傳所有 Claude Code 的啟動參數，你可以任意組合使用
 ```
 
 以程式設計模式啟動後，網頁將會自動開啟。
 
-CC-Viewer 也提供原生桌面應用程式 —— 請從 GitHub 下載適用於你平台的版本。
-[下載頁面](https://github.com/weiesky/cc-viewer/releases)
+CC-Viewer 也提供原生桌面應用程式：[下載頁面](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### 記錄器模式

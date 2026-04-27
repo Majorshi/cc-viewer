@@ -1,45 +1,46 @@
 # CC-Viewer
 
-Un kit d'outils Vibe Coding distillé de plus de 15 ans d'expérience en R&D dans l'industrie Internet, construit sur Claude Code :
+Un kit d'outils Vibe Coding distillé de la propre expérience de développement, construit sur Claude Code :
 
-1. Exécutez /ultraPlan et /ultraReview localement, afin que votre code n'ait jamais à être entièrement exposé au cloud de Claude ;
-2. Permet la programmation mobile sur votre réseau local (extensible par l'utilisateur) ;
-3. Interception et analyse complètes du payload de Claude Code — idéal pour la journalisation, le débogage, l'apprentissage et la rétro-ingénierie ;
-4. Livré avec des notes d'étude accumulées et une expérience pratique (recherchez les icônes "?" dans toute l'application), afin que nous puissions explorer et grandir ensemble ;
-5. L'interface Web s'adapte à tous les modes de taille — intégrez-la dans des extensions de navigateur, des vues partagées du système d'exploitation et tout scénario d'intégration ; un installeur natif est également disponible.
+1. Augmenter le plafond des capacités : exécutez /ultraPlan et /ultraReview localement, afin que le code de votre projet n'ait jamais à être entièrement exposé au cloud de Claude ;
+2. Compatibilité multiplateforme : permet la programmation mobile (au sein du LAN) ; la version Web s'adapte à divers scénarios, facile à intégrer dans des extensions de navigateur et des vues partagées du système d'exploitation, et fournit un installeur natif ;
+3. Journalisation complète : fournit des capacités complètes d'interception et d'analyse du payload de Claude Code, idéal pour la journalisation, l'analyse de problèmes, l'apprentissage, l'inspiration et la rétro-ingénierie ;
+4. Partage d'apprentissage et d'expérience : de nombreux matériels d'étude et expériences de développement ont été accumulés (voir les icônes "?" partout dans le système) ;
+5. Expérience native préservée : étend uniquement les capacités de Claude Code, sans modifications substantielles du noyau, préservant l'expérience native ;
+6. Prend en charge les modèles tiers : compatible avec deepseek-v4-*, GLM 5.1, Kimi K2.6, avec la capacité cc-switch intégrée pour basculer à chaud entre les outils tiers à tout moment.
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | Français | [Italiano](./README.it.md) | [Dansk](./README.da.md) | [Polski](./README.pl.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## Utilisation
 
-### Installation
+### Prérequis
+
+- Assurez-vous d'avoir installé Node.js 22.0.0+ ; [Télécharger et installer](https://nodejs.org)
+- Assurez-vous d'avoir installé Claude Code ; [Tutoriel d'installation](https://github.com/anthropics/claude-code)
+
+### Installer ccv
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### Mode Programmation
+### Lancement
 
 ccv est un remplacement direct pour claude — tous les arguments sont transmis à claude tout en lançant le Web Viewer.
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-La commande la plus utilisée par l'auteur est :
+La commande LA PLUS utilisée par l'auteur est :
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv transmet tous les paramètres de lancement de Claude Code — vous pouvez les combiner comme bon vous semble
 ```
 
 Après le lancement en mode programmation, une page Web s'ouvrira automatiquement.
 
-CC-Viewer est également livré sous forme d'application de bureau native — récupérez la version pour votre plateforme depuis GitHub.
-[Page de téléchargement](https://github.com/weiesky/cc-viewer/releases)
+CC-Viewer est également livré sous forme d'application de bureau native : [Page de téléchargement](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### Mode Logger

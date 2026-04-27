@@ -372,7 +372,7 @@
   text-align: right;
   color: var(--text-disabled);
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: nowrap;
 }

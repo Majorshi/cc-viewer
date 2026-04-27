@@ -1,45 +1,46 @@
 # CC-Viewer
 
-مجموعة أدوات Vibe Coding مستخلصة من أكثر من 15 عامًا من الخبرة البحثية والتطويرية في صناعة الإنترنت، مبنية فوق Claude Code:
+مجموعة أدوات Vibe Coding مستخلصة من خبرة تطوير عملية ومبنية فوق Claude Code:
 
-1. شغّل /ultraPlan و/ultraReview محليًا، حتى لا يحتاج الكود الخاص بك إلى التعرض الكامل لسحابة Claude؛
-2. يتيح البرمجة عبر الأجهزة المحمولة على الشبكة المحلية (قابل للتوسع من قِبل المستخدم)؛
-3. اعتراض وتحليل كاملان لحمولة Claude Code — رائع للتسجيل والتصحيح والتعلم والهندسة العكسية؛
-4. يأتي مع ملاحظات الدراسة المتراكمة والخبرة العملية (ابحث عن أيقونات "?" في جميع أنحاء التطبيق)، حتى نتمكن من الاستكشاف والنمو معًا؛
-5. تتكيف واجهة الويب مع كل وضع حجم — أسقطها في إضافات المتصفح، وطرق عرض نظام التشغيل المقسمة، وأي سيناريو تضمين؛ كما يتوفر مثبّت أصلي أيضًا.
+1. سقف قدرات أعلى — شغّل /ultraPlan و/ultraReview محليًا، حتى لا يحتاج كود مشروعك إلى التعرض الكامل لسحابة Claude؛
+2. التكيّف مع أجهزة متعددة — يتيح البرمجة عبر الأجهزة المحمولة (داخل الشبكة المحلية)، وتتكيّف نسخة الويب مع مختلف السيناريوهات، ويسهل تضمينها في إضافات المتصفح أو طرق عرض نظام التشغيل المقسمة، كما يتوفر مثبّت أصلي؛
+3. الاحتفاظ الكامل بالسجلات — اعتراض وتحليل كاملان لحمولة Claude Code، مثالي للتسجيل والتصحيح والتعلم والهندسة العكسية؛
+4. مشاركة خبرات التعلم — تم جمع الكثير من المواد الدراسية وخبرات التطوير (ابحث عن أيقونات "?" في جميع أنحاء التطبيق)؛
+5. الحفاظ على التجربة الأصلية — يقتصر على تعزيز قدرات Claude Code دون أي تعديلات جوهرية على النواة، مع الحفاظ على التجربة الأصلية؛
+6. دعم النماذج الخارجية — متوافق مع deepseek-v4-*، وGLM 5.1، وKimi K2.6، مع وظيفة cc-switch مدمجة تتيح التبديل السريع بين الأدوات الخارجية في أي وقت.
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | [Dansk](./README.da.md) | [Polski](./README.pl.md) | [Русский](./README.ru.md) | العربية | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## الاستخدام
 
-### التثبيت
+### المتطلبات الأساسية
+
+- تأكد من تثبيت Node.js 22.0.0+؛ [التنزيل](https://nodejs.org)
+- تأكد من تثبيت Claude Code؛ [دليل التثبيت](https://github.com/anthropics/claude-code)
+
+### تثبيت ccv
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### وضع البرمجة
+### التشغيل
 
 ccv هو بديل مباشر لـ claude — تُمرَّر جميع الوسائط إلى claude أثناء تشغيل Web Viewer.
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-الأمر الأكثر استخدامًا لدى المؤلف هو:
+الأمر الأكثر استخدامًا لدى المؤلف على الإطلاق هو:
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # يقوم ccv بتمرير جميع وسائط تشغيل Claude Code — يمكنك دمجها كما تشاء
 ```
 
 بعد التشغيل في وضع البرمجة، ستُفتح صفحة ويب تلقائيًا.
 
-يتوفر CC-Viewer أيضًا كتطبيق سطح مكتب أصلي — احصل على الإصدار المناسب لمنصتك من GitHub.
-[صفحة التنزيل](https://github.com/weiesky/cc-viewer/releases)
+يتوفر CC-Viewer أيضًا كتطبيق سطح مكتب أصلي: [صفحة التنزيل](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### وضع المُسجّل (Logger)

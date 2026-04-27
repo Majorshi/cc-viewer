@@ -1,45 +1,46 @@
 # CC-Viewer
 
-15+ yıllık internet endüstrisi Ar-Ge deneyiminden damıtılmış, Claude Code üzerine inşa edilmiş bir Vibe Coding araç seti:
+Uygulamalı geliştirme deneyiminden damıtılmış, Claude Code üzerine inşa edilmiş bir Vibe Coding araç seti:
 
-1. /ultraPlan ve /ultraReview'u yerel olarak çalıştırın, böylece kodunuzun Claude'un bulutuna tamamen ifşa edilmesi gerekmez;
-2. Yerel ağınız üzerinden mobil programlamayı mümkün kılar (kullanıcı tarafından genişletilebilir);
-3. Tam Claude Code payload yakalama ve analizi — günlükleme, hata ayıklama, öğrenme ve tersine mühendislik için harika;
-4. Birikmiş çalışma notları ve uygulamalı deneyimle birlikte gelir (uygulama genelinde "?" simgelerine bakın), böylece birlikte keşfedip büyüyebiliriz;
-5. Web kullanıcı arayüzü her boyut moduna uyum sağlar — tarayıcı uzantılarına, işletim sistemi bölünmüş görünümlerine ve herhangi bir gömme senaryosuna bırakın; yerel bir yükleyici de mevcuttur.
+1. Yetenek tavanını yükseltin — /ultraPlan ve /ultraReview'u yerel olarak çalıştırın, böylece projenizin kodu Claude'un bulutuna tamamen ifşa edilmek zorunda kalmaz;
+2. Çoklu cihaz uyumu — yerel ağınız üzerinden mobil cihazlardan kod yazın, web sürümü tarayıcı uzantılarına veya işletim sistemi bölünmüş görünümlerine gömme için her senaryoya uyum sağlar ve yerel bir yükleyici de sağlanır;
+3. Tam denetim izi — tam Claude Code payload yakalama ve analizi, günlükleme, hata ayıklama, öğrenme ve tersine mühendislik için mükemmel;
+4. Bilgi paylaşımı — birikmiş çalışma notları ve uygulamalı deneyimle birlikte gelir (uygulama genelinde "?" simgelerine bakın);
+5. Yerel deneyim korunur — Claude Code'un yeteneklerini çekirdeğinde herhangi bir esaslı değişiklik yapmadan yalnızca artırır, yerel deneyimi olduğu gibi korur;
+6. Üçüncü taraf model desteği — deepseek-v4-*, GLM 5.1, Kimi K2.6 ile çalışır, üçüncü taraf araçları istediğiniz zaman sıcak değiştirmek için yerleşik cc-switch yeteneği sunar.
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | [Dansk](./README.da.md) | [Polski](./README.pl.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | Türkçe | [Українська](./README.uk.md)
 
 ## Kullanım
 
-### Kurulum
+### Ön Koşullar
+
+- Node.js 22.0.0+ yüklü olduğundan emin olun; [indir ve yükle](https://nodejs.org)
+- Claude Code yüklü olduğundan emin olun; [yükleme kılavuzu](https://github.com/anthropics/claude-code)
+
+### ccv'yi Yükleme
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### Programlama Modu
+### Başlatma
 
 ccv, claude için doğrudan bir yedek — Web Viewer başlatılırken tüm argümanlar claude'a aktarılır.
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-Yazarın en çok kullandığı komut:
+Yazarın EN çok kullandığı komut:
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv tüm Claude Code başlatma argümanlarını aktarır — istediğiniz gibi birleştirin
 ```
 
 Programlama modunda başlatıldıktan sonra bir web sayfası otomatik olarak açılacaktır.
 
-CC-Viewer ayrıca yerel bir masaüstü uygulaması olarak da gönderilir — platformunuz için derlemeyi GitHub'dan alın.
-[İndirme sayfası](https://github.com/weiesky/cc-viewer/releases)
+CC-Viewer ayrıca yerel bir masaüstü uygulaması olarak da gönderilir: [İndirme sayfası](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### Logger Modu

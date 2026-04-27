@@ -1,45 +1,46 @@
 # CC-Viewer
 
-Et Vibe Coding-værktøjssæt destilleret fra over 15 års forsknings- og udviklingserfaring i internetindustrien, bygget oven på Claude Code:
+Et Vibe Coding-værktøjssæt destilleret fra praktisk udviklingserfaring og bygget oven på Claude Code:
 
-1. Kør /ultraPlan og /ultraReview lokalt, så din kode aldrig skal være fuldt eksponeret over for Claudes cloud;
-2. Muliggør mobil programmering over dit lokale netværk (kan udvides af brugeren);
-3. Fuld Claude Code payload-aflytning og -analyse — fremragende til logning, debugging, læring og reverse engineering;
-4. Leveres med akkumulerede studienoter og praktisk erfaring (kig efter „?"-ikonerne overalt i appen), så vi kan udforske og vokse sammen;
-5. Web-UI tilpasser sig enhver størrelsestilstand — læg det i browserudvidelser, OS-splitvisninger og ethvert indlejringsscenarie; en native installer er også tilgængelig.
+1. Højere kapacitetsloft — kør /ultraPlan og /ultraReview lokalt, så din projektkode ikke behøver at være fuldt eksponeret over for Claudes cloud;
+2. Multi-enheds tilpasning — muliggør mobil programmering (over dit lokale netværk), web-versionen tilpasser sig forskellige scenarier, gør det nemt at indlejre i browserudvidelser eller OS-splitvisninger, og en native installer er også tilgængelig;
+3. Fuld log-bevarelse — komplet aflytning og analyse af Claude Code-payloads, ideel til logning, fejlfinding, læring og reverse engineering;
+4. Delt læringserfaring — masser af studiemateriale og udviklingserfaring er indsamlet (se efter „?"-ikonerne overalt i appen);
+5. Native oplevelse bevaret — udvider kun Claude Codes funktioner uden væsentlige ændringer af kernen, hvilket bevarer den native oplevelse;
+6. Tredjepartsmodel-understøttelse — kompatibel med deepseek-v4-*, GLM 5.1, Kimi K2.6, indbygget cc-switch-funktionalitet, så du kan skifte tredjepartsværktøjer på farten.
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | Dansk | [Polski](./README.pl.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## Brug
 
-### Installation
+### Forudsætninger
+
+- Sørg for, at Node.js 22.0.0+ er installeret; [Download](https://nodejs.org)
+- Sørg for, at Claude Code er installeret; [Installationsvejledning](https://github.com/anthropics/claude-code)
+
+### Installer ccv
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### Programmeringstilstand
+### Start
 
 ccv er en drop-in erstatning for claude — alle argumenter sendes videre til claude, mens Web Viewer startes.
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-Forfatterens mest brugte kommando er:
+Forfatterens MEST brugte kommando er:
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv videresender alle Claude Codes opstartsargumenter — kombinér dem som du vil
 ```
 
 Efter start i programmeringstilstand åbnes en webside automatisk.
 
-CC-Viewer leveres også som en native desktop-app — hent builden til din platform fra GitHub.
-[Downloadside](https://github.com/weiesky/cc-viewer/releases)
+CC-Viewer leveres også som en native desktop-app: [Downloadside](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### Logger-tilstand

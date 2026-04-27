@@ -1,45 +1,46 @@
 # CC-Viewer
 
-15 年以上のインターネット業界における R&D 経験から抽出され、Claude Code 上に構築された Vibe Coding ツールキット：
+Claude Code をベースに、自身の開発経験を蒸留・蓄積した Vibe Coding ツール：
 
-1. /ultraPlan と /ultraReview をローカルで実行でき、コードを Claude のクラウドに完全に公開する必要がありません；
-2. ローカルネットワーク経由でのモバイルプログラミングを可能にします（ユーザー拡張可能）；
-3. Claude Code のペイロードを完全に傍受・解析 — ロギング、デバッグ、学習、リバースエンジニアリングに最適です；
-4. 蓄積された学習ノートと実践的な経験を同梱（アプリ全体にある「?」アイコンを探してください）。ともに探求し、成長できます；
-5. Web UI はあらゆるサイズモードに適応 — ブラウザ拡張、OS の画面分割、あらゆる埋め込みシナリオに投入可能；ネイティブインストーラも利用可能です。
+1. 能力の上限を引き上げる：/ultraPlan、/ultraReview をローカルで実行でき、プロジェクトのコードを Claude のクラウドに完全に公開せずに済みます；
+2. マルチデバイス同時対応：ローカルネットワーク内でモバイル端末からのプログラミングが可能、Web 版はあらゆるシーンに自動適応し、ブラウザ拡張や OS の画面分割への組み込みも容易、ネイティブインストーラも提供；
+3. 完全なログトレース：Claude Code のペイロードを丸ごと傍受・解析できる機能を提供し、ロギング、問題分析、学習、リバースエンジニアリングに最適；
+4. 学習・経験の共有：多くの学習資料や開発経験を蓄積しています（システム各所の「?」アイコンをご覧ください）；
+5. ネイティブ体験の維持：Claude Code の能力を強化するのみで、コアには一切実質的な変更を加えず、ネイティブ体験を保ちます；
+6. サードパーティモデル対応：deepseek-v4-*、GLM 5.1、Kimi K2.6 に対応、cc-switch 機能を内蔵しており、サードパーティツールにいつでもホットスイッチ可能です。
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | 日本語 | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | [Dansk](./README.da.md) | [Polski](./README.pl.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## 使い方
 
-### インストール
+### 前提条件
+
+- Node.js 22.0.0+ がインストール済みであることを確認してください；[ダウンロードしてインストール](https://nodejs.org)
+- Claude Code がインストール済みであることを確認してください；[インストールガイド](https://github.com/anthropics/claude-code)
+
+### ccv のインストール
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### プログラミングモード
+### 起動方法
 
 ccv は claude のドロップイン代替です — すべての引数は Web Viewer を起動しながら claude に渡されます。
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
 作者が最もよく使うコマンドは：
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv は Claude Code のすべての起動引数をパススルーします — お好みで自由に組み合わせてください
 ```
 
 プログラミングモードで起動すると、Web ページが自動的に開きます。
 
-CC-Viewer はネイティブデスクトップアプリとしても提供されています — GitHub からお使いのプラットフォーム向けビルドを入手してください。
-[ダウンロードページ](https://github.com/weiesky/cc-viewer/releases)
+CC-Viewer はネイティブデスクトップアプリとしても提供されています：[ダウンロードページ](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### ロガーモード

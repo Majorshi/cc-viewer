@@ -186,7 +186,6 @@ export default class AskQuestionForm extends React.Component {
                     onChange={e => this.setState(prev => ({
                       otherText: { ...prev.otherText, [qi]: e.target.value },
                     }))}
-                    onPressEnter={() => { if (allValid && !submitting) handleSubmit(); }}
                     autoFocus
                   />
                 </div>

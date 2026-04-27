@@ -111,7 +111,7 @@ const editorTheme = EditorView.theme({
     position: 'absolute',
     inset: '0',
     fontFamily: "'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace",
-    fontSize: '13px',
+    fontSize: '12px',
     lineHeight: '1.5',
   },
   // minimap 样式（位置由插件自行管理）

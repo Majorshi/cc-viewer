@@ -1,45 +1,46 @@
 # CC-Viewer
 
-Zestaw narzędzi Vibe Coding wydestylowany z ponad 15 lat doświadczenia w badaniach i rozwoju w branży internetowej, zbudowany na bazie Claude Code:
+Zestaw narzędzi Vibe Coding wydestylowany z praktycznego doświadczenia w rozwoju oprogramowania, zbudowany na bazie Claude Code:
 
-1. Uruchamiaj /ultraPlan i /ultraReview lokalnie, aby Twój kod nigdy nie musiał być w pełni eksponowany w chmurze Claude;
-2. Umożliwia programowanie mobilne w sieci lokalnej (rozszerzalne przez użytkownika);
-3. Pełne przechwytywanie i analiza payloadu Claude Code — świetne do logowania, debugowania, nauki i inżynierii wstecznej;
-4. Dostarczany ze zgromadzonymi notatkami edukacyjnymi i praktycznym doświadczeniem (szukaj ikon „?" w całej aplikacji), abyśmy mogli wspólnie odkrywać i rozwijać się;
-5. Interfejs webowy dostosowuje się do każdego trybu rozmiaru — umieść go w rozszerzeniach przeglądarki, podzielonych widokach systemu operacyjnego i dowolnym scenariuszu osadzania; dostępny jest również natywny instalator.
+1. Wyższy pułap możliwości — uruchamiaj /ultraPlan i /ultraReview lokalnie, aby kod Twojego projektu nie musiał być w pełni eksponowany w chmurze Claude;
+2. Adaptacja wieloplatformowa — umożliwia programowanie mobilne (w sieci lokalnej), wersja webowa dostosowuje się do różnych scenariuszy, łatwa do osadzenia w rozszerzeniach przeglądarki lub podzielonych widokach systemu operacyjnego, dostępny jest również natywny instalator;
+3. Pełne zachowanie logów — kompletne przechwytywanie i analiza payloadu Claude Code, idealne do logowania, debugowania, nauki i inżynierii wstecznej;
+4. Dzielenie się doświadczeniami — zgromadzono wiele materiałów edukacyjnych i doświadczenia w rozwoju (szukaj ikon „?" w całej aplikacji);
+5. Zachowane natywne doświadczenie — jedynie rozszerza możliwości Claude Code bez istotnych modyfikacji jądra, zachowując natywne doświadczenie;
+6. Wsparcie dla modeli zewnętrznych — kompatybilny z deepseek-v4-*, GLM 5.1, Kimi K2.6, wbudowana funkcjonalność cc-switch pozwala na bieżące przełączanie narzędzi zewnętrznych.
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | [Dansk](./README.da.md) | Polski | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | [Português (Brasil)](./README.pt-BR.md) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## Użytkowanie
 
-### Instalacja
+### Wymagania wstępne
+
+- Upewnij się, że zainstalowany jest Node.js 22.0.0+; [Pobierz](https://nodejs.org)
+- Upewnij się, że zainstalowany jest Claude Code; [Instrukcja instalacji](https://github.com/anthropics/claude-code)
+
+### Instalacja ccv
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### Tryb programowania
+### Uruchomienie
 
 ccv to bezpośredni zamiennik claude — wszystkie argumenty są przekazywane do claude podczas uruchamiania Web Viewer.
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-Najczęściej używane polecenie autora to:
+NAJCZĘŚCIEJ używane polecenie autora to:
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv przekazuje wszystkie argumenty uruchomieniowe Claude Code — łącz je dowolnie
 ```
 
 Po uruchomieniu w trybie programowania automatycznie otworzy się strona internetowa.
 
-CC-Viewer jest również dostępny jako natywna aplikacja desktopowa — pobierz kompilację dla swojej platformy z GitHub.
-[Strona pobierania](https://github.com/weiesky/cc-viewer/releases)
+CC-Viewer jest również dostępny jako natywna aplikacja desktopowa: [Strona pobierania](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### Tryb Logger

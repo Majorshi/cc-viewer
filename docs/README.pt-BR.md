@@ -1,45 +1,46 @@
 # CC-Viewer
 
-Um kit de ferramentas de Vibe Coding destilado de mais de 15 anos de experiência em P&D na indústria da internet, construído sobre o Claude Code:
+Um kit de ferramentas de Vibe Coding destilado de experiência prática de desenvolvimento, construído sobre o Claude Code:
 
-1. Execute /ultraPlan e /ultraReview localmente, para que seu código nunca precise ser totalmente exposto à nuvem do Claude;
-2. Permite programação móvel pela sua rede local (extensível pelo usuário);
-3. Interceptação e análise completas do payload do Claude Code — ótimo para registro, depuração, aprendizado e engenharia reversa;
-4. Vem com notas de estudo acumuladas e experiência prática (procure os ícones "?" ao longo do aplicativo), para que possamos explorar e crescer juntos;
-5. A interface Web se adapta a todos os modos de tamanho — coloque-a em extensões de navegador, visualizações divididas do sistema operacional e qualquer cenário de incorporação; um instalador nativo também está disponível.
+1. Eleve o teto de capacidade — execute /ultraPlan e /ultraReview localmente, para que o código do seu projeto nunca precise ser totalmente exposto à nuvem do Claude;
+2. Adaptação multi-dispositivo — programe a partir de dispositivos móveis pela sua rede local, a versão web se adapta a todos os cenários para incorporação em extensões de navegador ou visualizações divididas do SO, e um instalador nativo também é fornecido;
+3. Trilha de auditoria completa — interceptação e análise completas do payload do Claude Code, perfeito para registro, depuração, aprendizado e engenharia reversa;
+4. Compartilhamento de conhecimento — vem com notas de estudo acumuladas e experiência prática (procure os ícones "?" ao longo do aplicativo);
+5. Experiência nativa preservada — apenas amplia as capacidades do Claude Code sem nenhuma alteração substancial em seu núcleo, mantendo a experiência nativa intacta;
+6. Suporte a modelos de terceiros — funciona com deepseek-v4-*, GLM 5.1, Kimi K2.6, com capacidade cc-switch integrada para troca a quente de ferramentas de terceiros a qualquer momento.
 
 [English](../README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-TW.md) | [한국어](./README.ko.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Español](./README.es.md) | [Français](./README.fr.md) | [Italiano](./README.it.md) | [Dansk](./README.da.md) | [Polski](./README.pl.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md) | [Norsk](./README.no.md) | Português (Brasil) | [ไทย](./README.th.md) | [Türkçe](./README.tr.md) | [Українська](./README.uk.md)
 
 ## Uso
 
-### Instalação
+### Pré-requisitos
+
+- Certifique-se de que o Node.js 22.0.0+ está instalado; [download e instalação](https://nodejs.org)
+- Certifique-se de que o Claude Code está instalado; [guia de instalação](https://github.com/anthropics/claude-code)
+
+### Instalar ccv
 
 ```bash
 npm install -g cc-viewer --registry=https://registry.npmjs.org
 ```
 
-### Modo de Programação
+### Inicialização
 
 ccv é um substituto direto para claude — todos os argumentos são repassados para claude ao iniciar o Web Viewer.
 
 ```bash
 ccv                    # == claude (interactive mode)
-ccv -c                 # == claude --continue (continue last conversation)
-ccv -r                 # == claude --resume (resume a conversation)
-ccv -p "hello"         # == claude --print "hello" (print mode)
-ccv --d                # == claude --dangerously-skip-permissions (shortcut)
-ccv --model opus       # == claude --model opus
 ```
 
-O comando mais usado pelo autor é:
+O comando MAIS usado pelo autor é:
 ```
 ccv -c --d             # == claude --continue --dangerously-skip-permissions
+                       # ccv repassa todos os argumentos de inicialização do Claude Code — combine-os como quiser
 ```
 
 Após iniciar no modo de programação, uma página Web será aberta automaticamente.
 
-O CC-Viewer também é fornecido como um aplicativo desktop nativo — obtenha a versão para sua plataforma no GitHub.
-[Página de download](https://github.com/weiesky/cc-viewer/releases)
+O CC-Viewer também é fornecido como um aplicativo desktop nativo: [Página de download](https://github.com/weiesky/cc-viewer/releases)
 
 
 ### Modo Logger

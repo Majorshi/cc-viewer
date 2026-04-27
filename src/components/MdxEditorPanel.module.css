@@ -252,9 +252,7 @@
    表格 cell 里如果出现 <code> 也兼容）。 */
 .contentEditable :global(code),
 .contentEditable :global([class*='_code_']) {
-  background: var(--code-inline-bg);
   color: var(--code-inline-color);
-  padding: 0.15em 0.4em;
   border-radius: 3px;
   font-family: var(--font-mono);
   font-size: 0.9em;

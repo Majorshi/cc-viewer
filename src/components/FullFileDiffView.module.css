@@ -47,7 +47,7 @@
   display: flex;
   min-height: 0;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -61,7 +61,7 @@
 
 .lineNumRow {
   display: flex;
-  min-height: 21px;
+  min-height: 20px;
 }
 
 .oldLineNum,
@@ -126,7 +126,7 @@
 
 .codeLine {
   position: relative;
-  min-height: 21px;
+  min-height: 20px;
   display: flex;
   transition: background 0.1s;
 }
