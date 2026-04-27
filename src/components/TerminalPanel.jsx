@@ -19,24 +19,103 @@ import ConceptHelp from './ConceptHelp';
 import CustomUltraplanEditModal from './CustomUltraplanEditModal';
 import ImageLightbox from './ImageLightbox';
 import ConfirmRemoveButton from './ConfirmRemoveButton';
+import ScratchTerminal from './ScratchTerminal';
+import { darkTerminalTheme, lightTerminalTheme } from './terminalThemes';
 import { resizeImageIfNeeded } from '../utils/imageResize';
 
-const darkTerminalTheme = {
-  background: '#0a0a0a', foreground: '#d4d4d4', cursor: '#0a0a0a',
-  selectionBackground: '#264f78',
-  black: '#000000', red: '#ef4444', green: '#73c991', yellow: '#fbbf24',
-  blue: '#3b82f6', magenta: '#d946ef', cyan: '#06b6d4', white: '#e5e5e5',
-  brightBlack: '#666666', brightRed: '#ff7b7b', brightGreen: '#9ddc6f', brightYellow: '#ffce5b',
-  brightBlue: '#66b3ff', brightMagenta: '#e88ce8', brightCyan: '#7eddd9', brightWhite: '#ffffff',
-};
-const lightTerminalTheme = {
-  background: '#ffffff', foreground: '#333333', cursor: '#333333',
-  selectionBackground: '#cce5ff',
-  black: '#000000', red: '#CD3131', green: '#107C10', yellow: '#949800',
-  blue: '#0451A5', magenta: '#BC05BC', cyan: '#0598BC', white: '#555555',
-  brightBlack: '#666666', brightRed: '#CD3131', brightGreen: '#14CE14', brightYellow: '#B5BA00',
-  brightBlue: '#0451A5', brightMagenta: '#BC05BC', brightCyan: '#0598BC', brightWhite: '#A5A5A5',
-};
+const SCRATCH_OPEN_KEY = 'cc-viewer-scratch-open';
+const SCRATCH_HEIGHT_KEY = 'cc-viewer-scratch-height';
+const SCRATCH_TABS_KEY = 'cc-viewer-scratch-tabs';
+const SCRATCH_ACTIVE_TAB_KEY = 'cc-viewer-scratch-active-tab';
+// 注：.scratchWrap 用 outline + outline-offset:-4px 画 focus 环（不占布局），存储/clamp 的高度
+// 即可见高度本身，不再被边框吞噬；fitAddon 自动 refit，与历史 session 存储值兼容。
+const SCRATCH_HEIGHT_MIN = 100;
+const SCRATCH_HEIGHT_MAX = 600;
+const SCRATCH_HEIGHT_DEFAULT = 200;
+const SCRATCH_TAB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const SCRATCH_TAB_MAX = 8;
+
+function readScratchOpen() {
+  try { return localStorage.getItem(SCRATCH_OPEN_KEY) === 'true'; } catch { return false; }
+}
+function readScratchHeight() {
+  try {
+    const v = parseInt(localStorage.getItem(SCRATCH_HEIGHT_KEY), 10);
+    if (!Number.isFinite(v)) return SCRATCH_HEIGHT_DEFAULT;
+    return Math.max(SCRATCH_HEIGHT_MIN, Math.min(SCRATCH_HEIGHT_MAX, v));
+  } catch { return SCRATCH_HEIGHT_DEFAULT; }
+}
+
+function genScratchTabId() {
+  // 与服务端 SCRATCH_ID_RE `/^[A-Za-z0-9_-]{1,64}$/` 兼容
+  const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID().replace(/-/g, '')
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return ('t-' + rand).slice(0, 64);
+}
+
+function readScratchTabs() {
+  try {
+    const raw = localStorage.getItem(SCRATCH_TABS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    const out = [];
+    for (const t of arr) {
+      if (t && typeof t.id === 'string' && SCRATCH_TAB_ID_RE.test(t.id)) {
+        out.push({ id: t.id });
+        if (out.length >= SCRATCH_TAB_MAX) break;
+      }
+    }
+    return out;
+  } catch { return []; }
+}
+
+function readScratchActiveTab(tabs) {
+  try {
+    const v = localStorage.getItem(SCRATCH_ACTIVE_TAB_KEY);
+    if (v && tabs.some(t => t.id === v)) return v;
+  } catch {}
+  return tabs[0]?.id ?? '';
+}
+
+function writeScratchTabs(tabs) {
+  try { localStorage.setItem(SCRATCH_TABS_KEY, JSON.stringify(tabs)); } catch {}
+}
+function writeScratchActiveTab(id) {
+  try { localStorage.setItem(SCRATCH_ACTIVE_TAB_KEY, id); } catch {}
+}
+
+// 真实 $SHELL basename 由后端 WS state 消息上报后填进 state.scratchShellBasename，
+// 在拿到之前用 'zsh' 作为占位（macOS 默认 shell；新 server 到达 state 后会按真实 basename 覆盖）
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function ScratchTerminalIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <polyline points="7 9 10 12 7 15" />
+      <line x1="13" y1="15" x2="17" y2="15" />
+    </svg>
+  );
+}
 
 // 虚拟按键定义：label 显示文字，seq 为发送到终端的转义序列
 const VIRTUAL_KEYS = [
@@ -138,8 +217,164 @@ class TerminalPanel extends React.Component {
       lightbox: null,
       ultraplanLightbox: null,
       ultraplanConfirming: false,
+      scratchOpen: readScratchOpen(),
+      scratchHeight: readScratchHeight(),
+      isDraggingScratch: false,
+      scratchFocused: false,
+      scratchTabs: (() => {
+        const t = readScratchTabs();
+        return t.length > 0 ? t : [{ id: genScratchTabId() }];
+      })(),
+      activeScratchTabId: '',
+      scratchShellBasename: '',
     };
+    // 持久化 active id（先用 readScratchActiveTab 选；下面 mount 后再 sync 到 localStorage）
+    this.state.activeScratchTabId = readScratchActiveTab(this.state.scratchTabs);
+    this._scratchWrapRef = React.createRef();
+    this._scratchRefs = new Map(); // id -> React.createRef()
+    this._scratchDragging = false;
+    this._scratchDragLastH = null;
+    this._scratchPointerId = null;
   }
+
+  _getScratchRef(id) {
+    let ref = this._scratchRefs.get(id);
+    if (!ref) {
+      ref = React.createRef();
+      this._scratchRefs.set(id, ref);
+    }
+    return ref;
+  }
+
+  handleScratchTabClick = (id) => {
+    if (id === this.state.activeScratchTabId) return;
+    this.setState({ activeScratchTabId: id }, () => {
+      writeScratchActiveTab(id);
+      const r = this._scratchRefs.get(id);
+      if (r?.current) {
+        r.current.refit();
+        r.current.focus();
+      }
+    });
+  };
+
+  handleScratchTabAdd = () => {
+    if (this.state.scratchTabs.length >= SCRATCH_TAB_MAX) return;
+    const newId = genScratchTabId();
+    const tabs = [...this.state.scratchTabs, { id: newId }];
+    this.setState({ scratchTabs: tabs, activeScratchTabId: newId }, () => {
+      writeScratchTabs(tabs);
+      writeScratchActiveTab(newId);
+      // 等下一帧 ScratchTerminal mount + 显示后再 refit/focus
+      Promise.resolve().then(() => {
+        const r = this._scratchRefs.get(newId);
+        r?.current?.refit();
+        r?.current?.focus();
+      });
+    });
+  };
+
+  handleScratchTabClose = (id, e) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    if (this.state.scratchTabs.length <= 1) return; // 最少保留 1
+    const ref = this._scratchRefs.get(id);
+    try { ref?.current?.requestKill(); } catch {}
+    this._scratchRefs.delete(id);
+    const idx = this.state.scratchTabs.findIndex(t => t.id === id);
+    const tabs = this.state.scratchTabs.filter(t => t.id !== id);
+    let active = this.state.activeScratchTabId;
+    if (active === id) {
+      // 取右邻居，否则左邻居
+      active = (this.state.scratchTabs[idx + 1] ?? this.state.scratchTabs[idx - 1])?.id ?? tabs[0]?.id ?? '';
+    }
+    this.setState({ scratchTabs: tabs, activeScratchTabId: active }, () => {
+      writeScratchTabs(tabs);
+      writeScratchActiveTab(active);
+      if (active) {
+        const r = this._scratchRefs.get(active);
+        r?.current?.refit();
+        r?.current?.focus();
+      }
+    });
+  };
+
+  // 仅 active tab 的 focus/blur 事件影响 scratchFocused，避免 tab 切换时新旧并发触发抖动
+  handleScratchTabFocusChange = (id, focused) => {
+    if (id !== this.state.activeScratchTabId) return;
+    if (focused !== this.state.scratchFocused) {
+      this.setState({ scratchFocused: focused });
+    }
+  };
+
+  // 后端首条 state 消息携带 shellBasename；所有 tab 共用一个 $SHELL，只需取第一次到达的
+  handleScratchShellInfo = (name) => {
+    if (!name || this.state.scratchShellBasename) return;
+    this.setState({ scratchShellBasename: name });
+  };
+
+  toggleScratch = () => {
+    const next = !this.state.scratchOpen;
+    this.setState({ scratchOpen: next });
+    try { localStorage.setItem(SCRATCH_OPEN_KEY, String(next)); } catch {}
+  };
+
+  // 用 DOM 直写 style.height 而非 React JSX inline style：
+  // 1) 防 theme MutationObserver / preset-changed 等无关 setState 在拖拽中途把高度 snap 回去
+  // 2) 拖拽期间每帧 setState 抖动开销大；mouseup 时一次性 setState + localStorage 提交
+  _applyScratchHeight = () => {
+    const el = this._scratchWrapRef.current;
+    if (el) el.style.height = this.state.scratchHeight + 'px';
+  };
+
+  // Pointer Events + setPointerCapture：自动覆盖 mouseup 飞出窗口、iPad 触摸；不挂 document 全局监听
+  handleScratchResizerPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return; // 仅主键
+    e.preventDefault();
+    this._scratchDragging = true;
+    this._scratchDragStartY = e.clientY;
+    this._scratchDragStartH = this.state.scratchHeight;
+    this._scratchDragLastH = this.state.scratchHeight;
+    this._scratchPointerId = e.pointerId;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    this.setState({ isDraggingScratch: true });
+  };
+
+  handleScratchResizerPointerMove = (e) => {
+    if (!this._scratchDragging) return;
+    const newH = Math.max(
+      SCRATCH_HEIGHT_MIN,
+      Math.min(SCRATCH_HEIGHT_MAX, this._scratchDragStartH + (this._scratchDragStartY - e.clientY))
+    );
+    const el = this._scratchWrapRef.current;
+    if (!el) return;
+    el.style.height = newH + 'px';
+    this._scratchDragLastH = newH;
+  };
+
+  handleScratchResizerPointerUp = (e) => {
+    if (!this._scratchDragging) return;
+    this._endScratchDrag(e);
+  };
+
+  _endScratchDrag = (e) => {
+    this._scratchDragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (e && this._scratchPointerId != null && e.currentTarget) {
+      try { e.currentTarget.releasePointerCapture(this._scratchPointerId); } catch {}
+    }
+    this._scratchPointerId = null;
+    const h = this._scratchDragLastH;
+    this._scratchDragLastH = null;
+    if (h != null) {
+      try { localStorage.setItem(SCRATCH_HEIGHT_KEY, String(h)); } catch {}
+      this.setState({ scratchHeight: h, isDraggingScratch: false });
+    } else {
+      this.setState({ isDraggingScratch: false });
+    }
+  };
 
   componentDidMount() {
     this.initTerminal();
@@ -162,6 +397,29 @@ class TerminalPanel extends React.Component {
       }
     });
     this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    if (this.state.scratchOpen) this._applyScratchHeight();
+    // mount 时 sync tab 列表 / active id 到 localStorage（兼容旧版本只有 open/height 的存档）
+    writeScratchTabs(this.state.scratchTabs);
+    if (this.state.activeScratchTabId) writeScratchActiveTab(this.state.activeScratchTabId);
+  }
+
+  componentDidUpdate(_prevProps, prevState) {
+    if (prevState.scratchOpen !== this.state.scratchOpen) {
+      if (this.state.scratchOpen) {
+        // componentDidUpdate 在 React commit 之后、浏览器 paint 之前同步触发，
+        // 此时 ref.current 已是最新 DOM；直接写 style.height，不走 microtask 防 1 帧闪烁
+        this._applyScratchHeight();
+      } else if (this._scratchDragging) {
+        // 拖拽过程中 scratchOpen 被外部翻 false：resizer 已卸载、pointerup 不会再触达，
+        // 这里兜底恢复 body 样式与拖拽标志，防止 cursor/userSelect 残留
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        this._scratchDragging = false;
+        this._scratchDragLastH = null;
+        this._scratchPointerId = null;
+        this.setState({ isDraggingScratch: false });
+      }
+    }
   }
 
   _loadPresetShortcuts() {
@@ -201,6 +459,14 @@ class TerminalPanel extends React.Component {
   }
 
   componentWillUnmount() {
+    // mid-drag 卸载兜底：恢复 body 样式，标记终止
+    if (this._scratchDragging) {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      this._scratchDragging = false;
+      this._scratchDragLastH = null;
+      this._scratchPointerId = null;
+    }
     if (this.terminal?.textarea) {
       this.terminal.textarea.removeEventListener('focus', this._handleTermFocus);
       this.terminal.textarea.removeEventListener('blur', this._handleTermBlur);
@@ -1117,8 +1383,11 @@ class TerminalPanel extends React.Component {
   render() {
     const { pendingImages, onRemovePendingImage } = this.props;
     return (
-      <div className={`${styles.terminalPanel}${this.state.terminalFocused ? ` ${styles.terminalPanelFocused}` : ''}`}>
-        <div ref={this.containerRef} className={styles.terminalContainer} />
+      <div className={styles.terminalPanel}>
+        <div
+          ref={this.containerRef}
+          className={`${styles.terminalContainer}${this.state.terminalFocused ? ` ${styles.terminalContainerFocused}` : ''}`}
+        />
         {pendingImages?.length > 0 && (
           <div className={styles.pendingFileStrip}>
             {pendingImages.map((img, i) => {
@@ -1390,10 +1659,98 @@ class TerminalPanel extends React.Component {
                 </Popconfirm>
               );
             })()}
-            <button className={`${styles.toolbarBtn} ${styles.toolbarBtnRight}`} onClick={() => this.setState({ presetModalVisible: true })} title={t('ui.terminal.presetShortcuts')}>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <button
+              className={`${styles.toolbarBtn} ${styles.toolbarBtnRight}${this.state.scratchOpen ? ` ${styles.toolbarBtnActive}` : ''}`}
+              onClick={this.toggleScratch}
+              aria-pressed={this.state.scratchOpen}
+              aria-label={this.state.scratchOpen ? t('ui.terminal.scratchTerminalClose') : t('ui.terminal.scratchTerminalOpen')}
+              title={this.state.scratchOpen ? t('ui.terminal.scratchTerminalClose') : t('ui.terminal.scratchTerminalOpen')}
+            >
+              <ScratchTerminalIcon />
             </button>
           </div>
+        )}
+        {(!isMobile || isPad) && this.state.scratchOpen && (
+          <>
+            <div
+              className={`${styles.scratchResizer}${this.state.isDraggingScratch ? ` ${styles.scratchResizerDragging}` : ''}`}
+              onPointerDown={this.handleScratchResizerPointerDown}
+              onPointerMove={this.handleScratchResizerPointerMove}
+              onPointerUp={this.handleScratchResizerPointerUp}
+              onPointerCancel={this.handleScratchResizerPointerUp}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label={t('ui.terminal.scratchResizer')}
+            />
+            <div
+              ref={this._scratchWrapRef}
+              className={styles.scratchWrap}
+            >
+              <div className={styles.scratchTabs} role="tablist" aria-orientation="vertical">
+                {this.state.scratchTabs.map((tab, idx) => {
+                  const isActive = tab.id === this.state.activeScratchTabId;
+                  const isLast = this.state.scratchTabs.length === 1;
+                  // 同名 shell 重复时追加序号区分
+                  // 占位 'zsh'：老版本 server 不发 shellBasename 时也展示符合 macOS 默认 shell 的名字；
+                  // 新 server 的 WS state 消息携带真实 basename 后会覆盖（bash/fish 用户也对）
+                  const baseLabel = this.state.scratchShellBasename || 'zsh';
+                  const label = baseLabel + (this.state.scratchTabs.length > 1 ? ` ${idx + 1}` : '');
+                  return (
+                    <div
+                      key={tab.id}
+                      role="tab"
+                      aria-selected={isActive}
+                      tabIndex={isActive ? 0 : -1}
+                      className={`${styles.scratchTab}${isActive ? ` ${styles.scratchTabActive}` : ''}`}
+                      onClick={() => this.handleScratchTabClick(tab.id)}
+                      title={label}
+                    >
+                      <span className={styles.scratchTabIcon}><ScratchTerminalIcon /></span>
+                      <span className={styles.scratchTabLabel}>{label}</span>
+                      {!isLast && (
+                        <button
+                          className={styles.scratchTabClose}
+                          onClick={(e) => this.handleScratchTabClose(tab.id, e)}
+                          title={t('ui.terminal.scratchTabClose')}
+                          aria-label={t('ui.terminal.scratchTabClose')}
+                        >
+                          <CloseIcon />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                <button
+                  className={styles.scratchTabAdd}
+                  onClick={this.handleScratchTabAdd}
+                  disabled={this.state.scratchTabs.length >= SCRATCH_TAB_MAX}
+                  title={t('ui.terminal.scratchTabAdd')}
+                  aria-label={t('ui.terminal.scratchTabAdd')}
+                >
+                  <PlusIcon />
+                </button>
+              </div>
+              <div className={`${styles.scratchPanes}${this.state.scratchFocused ? ` ${styles.scratchPanesFocused}` : ''}`}>
+                {this.state.scratchTabs.map((tab) => {
+                  const isActive = tab.id === this.state.activeScratchTabId;
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`${styles.scratchPane}${isActive ? ` ${styles.scratchPaneActive}` : ''}`}
+                      role="tabpanel"
+                    >
+                      <ScratchTerminal
+                        ref={this._getScratchRef(tab.id)}
+                        id={tab.id}
+                        onFocusChange={(f) => this.handleScratchTabFocusChange(tab.id, f)}
+                        onShellInfo={this.handleScratchShellInfo}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         )}
         {(isMobile && !isPad) && (
           <div className={styles.virtualKeybar}>

@@ -58,7 +58,7 @@ class AppBase extends React.Component {
       resumeAutoChoice: null, // null | "continue" | "new"
       autoApproveSeconds: 0, // 自动审批倒计时秒数，0=关闭
       collapseToolResults: true,
-      expandThinking: true,
+      expandThinking: false,
       expandDiff: false,
       logDir: '',
       showFullToolContent: false,

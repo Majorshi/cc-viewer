@@ -256,7 +256,7 @@ async function handleRequest(req, res) {
   const method = req.method;
 
   // WebSocket 路径不处理，交给 upgrade 事件
-  if (url === '/ws/terminal') {
+  if (url === '/ws/terminal' || url === '/ws/terminal-scratch') {
     return;
   }
 
@@ -783,8 +783,11 @@ async function handleRequest(req, res) {
   }
 
   if (url === '/api/workspaces/stop' && method === 'POST') {
-    import('./pty-manager.js').then(({ killPty }) => {
-      killPty();
+    Promise.all([
+      import('./pty-manager.js').then(({ killPty }) => killPty()),
+      import('./scratch-pty-manager.js').then(({ killAllScratch }) => killAllScratch()).catch(() => {}),
+    ]).then(() => {
+      // 接续原有清理流程
 
       // 停止日志监听
       for (const logFile of getWatchedFiles().keys()) {
@@ -3140,10 +3143,26 @@ async function setupTerminalWebSocket(httpServer) {
   try {
     const { WebSocketServer } = await import('ws');
     const { writeToPty, writeToPtySequential, resizePty, onPtyData, onPtyExit, getPtyState, getOutputBuffer, getCurrentWorkspace, spawnShell } = await import('./pty-manager.js');
+    const {
+      spawnScratch,
+      writeScratch,
+      resizeScratch,
+      killScratch,
+      onScratchData,
+      onScratchExit,
+      getScratchState,
+      getScratchOutputBuffer,
+      getScratchShellBasename,
+      getScratchPtyCount,
+      hasScratchPty,
+    } = await import('./scratch-pty-manager.js');
+    const SCRATCH_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+    const MAX_SCRATCH_PTYS = 16;
     _writeToPty = writeToPty;
     _onPtyData = onPtyData;
     const wss = new WebSocketServer({ noServer: true });
     terminalWss = wss;
+    const wssScratch = new WebSocketServer({ noServer: true });
 
     // 多客户端共享 PTY 的尺寸冲突解决：
     // 移动端优先——只要有移动端在线，PTY 始终使用移动端尺寸，
@@ -3170,9 +3189,85 @@ async function setupTerminalWebSocket(httpServer) {
         wss.handleUpgrade(req, socket, head, (ws) => {
           wss.emit('connection', ws, req);
         });
+      } else if (pathname === '/ws/terminal-scratch') {
+        // 校验 id：缺失或非法 → destroy（避免 Map<id> 被注入空键 / 超长 / 特殊字符）
+        const scratchId = new URL(req.url, `${serverProtocol}://${req.headers.host}`).searchParams.get('id');
+        if (!scratchId || !SCRATCH_ID_RE.test(scratchId)) {
+          socket.destroy();
+          return;
+        }
+        // 硬上限基于后端 ptys Map 大小（含 running 与已退出未回收），
+        // 已有 id 走重连路径不计入新增配额；防止用户关浏览器后老 pty 仍存活、
+        // 新会话又能开 16 个导致总量翻番的累积膨胀
+        if (!hasScratchPty(scratchId) && getScratchPtyCount() >= MAX_SCRATCH_PTYS) {
+          socket.destroy();
+          return;
+        }
+        req.ccvScratchId = scratchId;
+        wssScratch.handleUpgrade(req, socket, head, (ws) => {
+          wssScratch.emit('connection', ws, req);
+        });
       } else {
         socket.destroy();
       }
+    });
+
+    // scratch 终端 WS：极简版，仅承载 input/resize/data/exit + 显式 kill；不掺杂 hook/SDK/preset
+    wssScratch.on('connection', async (ws, req) => {
+      const id = req.ccvScratchId;
+      // 懒启动 scratch shell（首次连接才 spawn）
+      try {
+        if (!getScratchState(id).running) {
+          await spawnScratch(id);
+        }
+      } catch (err) {
+        try { ws.send(JSON.stringify({ type: 'toast', message: `scratch spawn failed: ${err.message}` })); } catch {}
+      }
+
+      const state = getScratchState(id);
+      try { ws.send(JSON.stringify({ type: 'state', running: state.running, exitCode: state.exitCode, shellBasename: getScratchShellBasename() })); } catch {}
+
+      const buffer = getScratchOutputBuffer(id);
+      if (buffer) {
+        try { ws.send(JSON.stringify({ type: 'data', data: buffer })); } catch {}
+      }
+
+      const removeDataListener = onScratchData(id, (data) => {
+        if (ws.readyState === 1) {
+          try { ws.send(JSON.stringify({ type: 'data', data })); } catch {}
+        }
+      });
+
+      const removeExitListener = onScratchExit(id, (exitCode) => {
+        if (ws.readyState === 1) {
+          try { ws.send(JSON.stringify({ type: 'exit', exitCode })); } catch {}
+        }
+      });
+
+      ws.on('message', async (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg.type === 'input') {
+            const s = getScratchState(id);
+            if (!s.running) {
+              try { await spawnScratch(id); } catch {}
+            }
+            writeScratch(id, msg.data);
+          } else if (msg.type === 'resize') {
+            resizeScratch(id, msg.cols, msg.rows);
+          } else if (msg.type === 'kill') {
+            // 用户主动关闭 tab：杀 pty（killScratch 内部 ptys.delete 后配额自动释放）；前端会随后 close ws
+            killScratch(id);
+          }
+        } catch {}
+      });
+
+      ws.on('close', () => {
+        removeDataListener();
+        removeExitListener();
+        // pty 本身**不杀**（保留以支持刷新重连），由 kill 消息或 /api/workspaces/stop 触发；
+        // 配额由 ptys Map 自身大小决定，不需在此手动维护连接集合
+      });
     });
 
     wss.on('connection', (ws) => {

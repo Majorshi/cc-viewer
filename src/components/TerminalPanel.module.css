@@ -3,38 +3,30 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-base-alt);
-  border: 4px solid transparent;
-  transition: border-color 0.3s ease-out, box-shadow 0.3s ease-out;
 }
 
-.terminalPanelFocused {
-  border-color: var(--border-secondary);
-  box-shadow: 0 0 8px var(--color-primary-bg-light);
-  animation: terminalFocusIn 0.3s ease-out;
-}
-
-@keyframes terminalFocusIn {
-  from { border-color: transparent; box-shadow: none; }
-  to { border-color: var(--border-secondary); box-shadow: 0 0 8px var(--color-primary-bg-light); }
-}
-
-:global([data-theme="light"]) .terminalPanelFocused {
-  border-color: rgba(217, 119, 87, 0.15);
-  box-shadow: none;
-  animation-name: terminalFocusInLight;
-}
-
-@keyframes terminalFocusInLight {
-  from { border-color: transparent; box-shadow: none; }
-  to { border-color: rgba(217, 119, 87, 0.15); box-shadow: none; }
-}
-
+/* focus 边框移到 xterm host 自身（白色背景所在元素），主终端与 scratch 各自独立。
+   用 outline + outline-offset:-4px 替代 border：outline 不占布局空间，没聚焦时元素四边
+   不会暴露父容器灰底；聚焦时画 4px 内嵌色环（与 border 视觉等价）。 */
 .terminalContainer {
   flex: 1;
   overflow: hidden;
   padding: 4px 8px;
+  outline: 4px solid transparent;
+  outline-offset: -4px;
+  transition: outline-color 0.3s ease-out, box-shadow 0.3s ease-out;
   touch-action: none;
   overscroll-behavior: contain;
+}
+
+.terminalContainerFocused {
+  outline-color: var(--border-secondary);
+  box-shadow: 0 0 8px var(--color-primary-bg-light);
+}
+
+:global([data-theme="light"]) .terminalContainerFocused {
+  outline-color: rgba(217, 119, 87, 0.15);
+  box-shadow: none;
 }
 
 [data-theme="light"] .terminalContainer { background: #FFF; }
@@ -436,6 +428,218 @@
 
 .toolbarBtnRight {
   margin-left: auto;
+}
+
+.toolbarBtnActive {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.toolbarBtnActive:hover {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+/* scratch 终端容器：高度由 React 通过 ref 直写 .style.height（避免 JSX inline style 在拖拽中途被无关 setState 覆盖）。
+   多 tab 改造后改为 flex-direction: row：左 .scratchTabs + 右 .scratchPanes。
+   focus 边框收窄到 .scratchPanes（只圈白色 xterm 区域），灰色 tab 栏不参与 focus 视觉，更干净。 */
+.scratchWrap {
+  flex-shrink: 0;
+  min-height: 100px;
+  max-height: 600px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+}
+
+/* tab 侧栏 */
+.scratchTabs {
+  flex-shrink: 0;
+  width: 95px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base-alt);
+  border-right: 1px solid var(--border-primary);
+  overflow-y: auto;
+  padding: 4px;
+  gap: 2px;
+}
+
+.scratchTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.scratchTab:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.scratchTabActive {
+  background: var(--color-primary-bg-light);
+  color: var(--text-primary);
+}
+.scratchTabActive:hover {
+  background: var(--color-primary-bg-light);
+}
+
+.scratchTabIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.scratchTabIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.scratchTabLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scratchTabClose {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.scratchTab:hover .scratchTabClose,
+.scratchTabActive .scratchTabClose {
+  opacity: 1;
+}
+.scratchTabClose:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+/* 触摸设备无 hover 事件，× 始终显示，避免要先点击激活 tab 才能看到关闭按钮 */
+@media (hover: none) {
+  .scratchTabClose {
+    opacity: 1;
+  }
+}
+
+.scratchTabAdd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  margin-top: 2px;
+  border: 1px dashed var(--border-secondary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.scratchTabAdd:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--text-disabled);
+}
+.scratchTabAdd:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* tab 对应的 xterm pane 容器：仅承担 box-shadow glow；4px focus 视觉已迁移到 .scratchInner border。
+   原方案 outline + outline-offset:-4px 是 paint-only，xterm-screen 顶/底会把 outline 像素带盖白（用户实测）；
+   改成 .scratchInner 自身的 border:4px 后，box model 强制预留 4px 像素带，xterm fitAddon 读 content-box
+   高度时自动减掉 border，xterm canvas 物理上无法再画进 focus 像素带。 */
+.scratchPanes {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: box-shadow 0.3s ease-out;
+}
+
+.scratchPanesFocused {
+  box-shadow: 0 0 8px var(--color-primary-bg-light);
+}
+
+:global([data-theme="light"]) .scratchPanesFocused {
+  box-shadow: none;
+}
+
+.scratchPane {
+  flex: 1;
+  min-height: 0;
+  display: none;
+  flex-direction: column;
+}
+.scratchPaneActive {
+  display: flex;
+}
+
+
+/* 工具栏与 scratch 面板之间的水平拖拽条 — .vResizer (ChatView) 的横向镜像，统一拖拽线视觉 */
+.scratchResizer {
+  flex-shrink: 0;
+  height: 5px;
+  cursor: row-resize;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-primary);
+  transition: background 0.15s;
+  touch-action: none;
+}
+.scratchResizer:hover {
+  background: var(--border-secondary);
+}
+.scratchResizerDragging {
+  background: var(--border-secondary);
+}
+
+[data-theme="light"] .scratchWrap { background: #FFF; }
+[data-theme="dark"] .scratchWrap { background: #000; }
+
+.scratchInner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* 4px transparent border 永远占位（focused 时由 .scratchPanesFocused .scratchPaneActive 选择器
+     切到主题色），是 box model 硬预留——xterm fitAddon 读 .scratchInner 的 content-box 高度时自动
+     扣除 border + padding，canvas 不可能画进这 4px 像素带。padding 8px 给 border 内边到 xterm 内容
+     再叠 8px 干净缓冲，亚像素抗锯齿也不会贴到 border。 */
+  border: 4px solid transparent;
+  padding: 8px;
+  touch-action: none;
+  overscroll-behavior: contain;
+  transition: border-color 0.3s ease-out;
+}
+
+.scratchPanesFocused .scratchPane.scratchPaneActive .scratchInner {
+  border-color: var(--border-secondary);
+}
+
+:global([data-theme="light"]) .scratchPanesFocused .scratchPane.scratchPaneActive .scratchInner {
+  border-color: rgba(217, 119, 87, 0.15);
+}
+
+.scratchInner :global(.xterm-helper-textarea) {
+  caret-color: #00000000;
 }
 
 .presetSectionHeader {
