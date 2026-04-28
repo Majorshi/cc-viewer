@@ -3281,6 +3281,12 @@ async function setupTerminalWebSocket(httpServer) {
         ws.send(JSON.stringify({ type: 'data', data: buffer }));
       }
 
+      // 兜底重绘标记：claude TUI 在 alternate-screen 下只在收到 SIGWINCH 时重绘整屏。
+      // 若前端首次 resize 与 PTY 当前尺寸恰好相等，pty.resize noop 不发 SIGWINCH → 前端空白。
+      // 该 ws 收到第一条 resize 时（见 ws.on('message')），抖动 (rows+1) → (rows) 触发 SIGWINCH。
+      // 注：仅 PTY 已运行时才需要兜底；shell 不在 alternate-screen 不需要。
+      let _needRedrawBootstrap = state.running === true;
+
       // PTY 输出 → WebSocket
       const removeDataListener = onPtyData((data) => {
         if (ws.readyState === 1) {
@@ -3453,6 +3459,17 @@ async function setupTerminalWebSocket(httpServer) {
             } else if (mobileClients.size === 0 && (activeWs === ws || activeWs === null)) {
               activeWs = ws;
               resizePty(msg.cols, msg.rows);
+            }
+            // 兜底：本 ws 首次 resize 时直接给 PTY 发 SIGWINCH，让 claude 重绘整屏。
+            // 之前用 (cols, rows+1)→(cols, rows) 抖动触发是因为 pty.resize 对相同尺寸 noop；
+            // 单次 process.kill(pid, 'SIGWINCH') 等价但更干净——claude 用现有 size 重绘，不需要
+            // 让 PTY 短暂处于错误尺寸再回滚（避免 50-100ms 闪烁）
+            if (_needRedrawBootstrap) {
+              _needRedrawBootstrap = false;
+              try {
+                const pid = getClaudePid();
+                if (pid && pid !== process.pid) process.kill(pid, 'SIGWINCH');
+              } catch {}
             }
           }
         } catch {}

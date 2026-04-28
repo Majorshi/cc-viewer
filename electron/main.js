@@ -12,7 +12,7 @@ import { app, BaseWindow, WebContentsView, Menu, ipcMain, dialog } from 'electro
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join, basename, delimiter } from 'path';
 import { fork, execSync } from 'child_process';
-import { realpathSync, existsSync, readFileSync, watchFile, unwatchFile } from 'fs';
+import { realpathSync, existsSync, readFileSync, watchFile, unwatchFile, mkdirSync, createWriteStream, readdirSync, statSync, unlinkSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -132,7 +132,9 @@ async function startMgmtServer() {
 }
 
 // --- Tab state ---
-const TAB_BAR_HEIGHT = 36;
+const TAB_BAR_HEIGHT = 60;
+// debug worker 日志保留窗口（CCV_DEBUG_WORKER_LOGS=1 时使用）
+const LOG_RETENTION_MS = 7 * 24 * 3600 * 1000;
 const tabs = new Map(); // tabId -> { child, port, token, projectName, realPath, view, status }
 let nextTabId = 1;
 let activeTabId = null;
@@ -208,12 +210,42 @@ function createTab(projectPath, extraArgs = []) {
   delete childEnv.ANTHROPIC_BASE_URL;
   childEnv.CCV_PROJECT_DIR = realPath;
 
+  // worker stdio：默认 inherit（行为与原版一致，零 IO 开销）；
+  // CCV_DEBUG_WORKER_LOGS=1 时切到 pipe + 写文件（便于排查打包后从 Finder 启动的问题）
+  // — Finder 启动 .app 时 inherit 等于丢弃 worker 输出，开关打开后日志落到
+  //   ${CCV_LOG_DIR || ~/.claude/cc-viewer}/electron-debug-{ts}-tab{N}.log，自动清理 7 天前旧文件
+  const _debugWorkerLogs = process.env.CCV_DEBUG_WORKER_LOGS === '1';
+  let _logStream = null;
+  if (_debugWorkerLogs) {
+    const _logDir = process.env.CCV_LOG_DIR || join(home, '.claude', 'cc-viewer');
+    try { mkdirSync(_logDir, { recursive: true }); } catch (err) { console.error('[Electron] mkdir log dir failed:', err.message); }
+    try {
+      const cutoff = Date.now() - LOG_RETENTION_MS;
+      for (const f of readdirSync(_logDir)) {
+        if (!f.startsWith('electron-debug-') || !f.endsWith('.log')) continue;
+        const fp = join(_logDir, f);
+        if (statSync(fp).mtimeMs < cutoff) unlinkSync(fp);
+      }
+    } catch (err) { console.error('[Electron] cleanup old debug logs failed:', err.message); }
+    const _logPath = join(_logDir, `electron-debug-${Date.now()}-tab${tabId}.log`);
+    _logStream = createWriteStream(_logPath, { flags: 'a' });
+    console.error(`[Electron] tab ${tabId} debug log → ${_logPath}`);
+  }
+
   const child = fork(join(__dirname, 'tab-worker.js'), [], {
     execPath: _nodePath,
     cwd: realPath,
     env: childEnv,
-    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+    stdio: _debugWorkerLogs
+      ? ['ignore', 'pipe', 'pipe', 'ipc']
+      : ['inherit', 'inherit', 'inherit', 'ipc'],
+    silent: _debugWorkerLogs,
   });
+  if (_logStream) {
+    child.stdout?.pipe(_logStream, { end: false });
+    child.stderr?.pipe(_logStream, { end: false });
+    child.on('exit', () => { try { _logStream.end(); } catch {} });
+  }
 
   tabs.get(tabId).child = child;
 
@@ -578,6 +610,7 @@ if (!gotLock) {
       minHeight: 600,
       title: 'CC Viewer',
       titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 22 },
     });
 
     // Tab bar
