@@ -123,6 +123,31 @@ let pendingAskHook = null; // { questions, res, timer, createdAt }
 const pendingPermHooks = new Map(); // Map<id, { toolName, input, res, timer, createdAt }>
 const PERM_HOOK_MAP_MAX = 50;
 
+// Notify the parent process (Electron main, when forked under tab-worker) about pending state changes.
+// No-op outside Electron (process.send is undefined when run as a standalone Node server).
+// Only ask-hook-* / sdk-ask-* are translated. Permission and SDK plan stay inline-only and do not
+// drive global modal / flashFrame / Notification (per UX direction). PTY plan is parsed in the
+// renderer and reported via window.tabBridge directly, not through this server-side hook.
+function _notifyParentPending(msg) {
+  if (!process.send || !msg || typeof msg !== 'object' || !msg.type) return;
+  let event = null;
+  switch (msg.type) {
+    case 'ask-hook-pending':
+    case 'sdk-ask-pending':
+      event = { type: 'pending-add', kind: 'ask', id: msg.id != null ? String(msg.id) : '__ask__', payload: { questions: msg.questions, projectName: _projectName || '' } };
+      break;
+    case 'ask-hook-timeout':
+    case 'sdk-ask-timeout':
+    case 'ask-hook-resolved':
+    case 'sdk-ask-resolved':
+      event = { type: 'pending-remove', kind: 'ask', id: msg.id != null ? String(msg.id) : '__ask__' };
+      break;
+    default:
+      return;
+  }
+  try { process.send(event); } catch {}
+}
+
 // Live stream chunk sequence tracking (per request key) — prevents out-of-order broadcasts
 const _liveStreamLastSeq = new Map(); // Map<`${timestamp}|${url}`, lastSeq>
 
@@ -478,6 +503,91 @@ async function handleRequest(req, res) {
         res.end(JSON.stringify({ error: 'Import failed' }));
       }
     });
+    return;
+  }
+
+  // 读取 ~/.claude/plans/*.md 文件内容（用于 ExitPlanMode V2 input.planFilePath 的兜底显示）
+  // 严格白名单：只允许读 ~/.claude/plans/ 下 .md 文件，realpath 双向校验防符号链接逃逸，体积 ≤ 2MB
+  if (url === '/api/plan-file' && method === 'GET') {
+    try {
+      const raw = parsedUrl.searchParams.get('path') || '';
+      if (!raw) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'missing path' }));
+        return;
+      }
+      // null-byte 注入显式拒绝（path.resolve('\x00...') 在 Linux 不抛 → 仅靠 startsWith 比对副作用兜底过于隐蔽）
+      if (raw.indexOf('\x00') !== -1) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'invalid path (null byte)' }));
+        return;
+      }
+      const plansDir = join(homedir(), '.claude', 'plans');
+      const isWin = platform() === 'win32';
+      const norm = (p) => isWin ? p.toLowerCase() : p;
+      // 后缀白名单（.md，大小写不敏感）
+      if (!raw.toLowerCase().endsWith('.md')) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'invalid extension' }));
+        return;
+      }
+      // 拒绝相对路径（前端永远应发送 SDK 注入的绝对 planFilePath）
+      // path.isAbsolute 在 win32 同时识别 'C:\' 和 '/' 起头
+      const isAbs = /^([a-zA-Z]:[\\/]|[\\/])/.test(raw);
+      if (!isAbs) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'absolute path required' }));
+        return;
+      }
+      // 原始路径必须落在 plansDir 内（先做这层廉价检查，挡掉 ../../../etc/passwd 类路径）
+      const resolved = resolve(raw);
+      const plansDirSep = plansDir.endsWith('/') || plansDir.endsWith('\\') ? plansDir : plansDir + (isWin ? '\\' : '/');
+      if (!norm(resolved).startsWith(norm(plansDirSep))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
+        return;
+      }
+      // 文件不存在 → 404
+      if (!existsSync(resolved)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'not found' }));
+        return;
+      }
+      // realpath 双向校验：防止 plansDir 下放符号链接指向外部目录
+      let realResolved, realPlansDir;
+      try {
+        realResolved = realpathSync(resolved);
+        realPlansDir = realpathSync(plansDir);
+      } catch {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'realpath failed' }));
+        return;
+      }
+      const realPlansDirSep = realPlansDir.endsWith('/') || realPlansDir.endsWith('\\')
+        ? realPlansDir : realPlansDir + (isWin ? '\\' : '/');
+      if (!norm(realResolved).startsWith(norm(realPlansDirSep))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'forbidden (symlink)' }));
+        return;
+      }
+      const st = statSync(realResolved);
+      if (!st.isFile()) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'not a file' }));
+        return;
+      }
+      if (st.size > 2 * 1024 * 1024) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'too large' }));
+        return;
+      }
+      const content = readFileSync(realResolved, 'utf-8');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, content }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
+    }
     return;
   }
 
@@ -1992,6 +2102,7 @@ async function handleRequest(req, res) {
                 if (c.readyState === 1) try { c.send(tmsg); } catch {}
               });
             }
+            _notifyParentPending({ type: 'ask-hook-timeout' });
           }
         }, HOOK_TIMEOUT);
 
@@ -2006,6 +2117,7 @@ async function handleRequest(req, res) {
             }
           });
         }
+        _notifyParentPending({ type: 'ask-hook-pending', questions });
 
         // Handle ask-bridge.js disconnection (use res instead of req — Node.js v24+ fires req 'close' immediately after body is read)
         res.on('close', () => {
@@ -2018,6 +2130,7 @@ async function handleRequest(req, res) {
                 if (c.readyState === 1) try { c.send(tmsg); } catch {}
               });
             }
+            _notifyParentPending({ type: 'ask-hook-timeout' });
           }
         });
       } catch {
@@ -3119,6 +3232,7 @@ export async function startViewer() {
                   const rmsg = JSON.stringify({ type: 'ask-hook-resolved' });
                   terminalWss.clients.forEach((c) => { if (c.readyState === 1) try { c.send(rmsg); } catch {} });
                 }
+                _notifyParentPending({ type: 'ask-hook-resolved' });
                 return true;
               },
               resolveSdkApproval: (...args) => _sdkResolveApproval?.(...args),
@@ -3381,6 +3495,7 @@ async function setupTerminalWebSocket(httpServer) {
                 if (c !== ws && c.readyState === 1) try { c.send(rmsg); } catch {}
               });
             }
+            if (askAnswered) _notifyParentPending({ type: 'ask-hook-resolved' });
           } else if (msg.type === 'perm-hook-answer') {
             // Permission approval — SDK mode (canUseTool) or PTY mode (hook bridge)
             let permAnswered = false;
@@ -3419,6 +3534,7 @@ async function setupTerminalWebSocket(httpServer) {
                 if (c !== ws && c.readyState === 1) try { c.send(rmsg); } catch {}
               });
             }
+            if (msg.id) _notifyParentPending({ type: 'sdk-ask-resolved', id: msg.id });
           } else if (msg.type === 'sdk-plan-answer') {
             // Plan approval in SDK mode
             if (_sdkResolveApproval) {
@@ -3612,6 +3728,13 @@ export function broadcastWsMessage(msg) {
     terminalWss.clients.forEach((c) => {
       if (c.readyState === 1) try { c.send(str); } catch {}
     });
+  }
+  // 仅对 ask 类型转译给主进程；perm-hook-* / sdk-plan-* 维持 inline-only（红线）。
+  // 显式调用 _notifyParentPending 的分支（ask-hook-resolved 等）走 ws.send 不进这里，无重复触发。
+  if (msg && typeof msg === 'object' && typeof msg.type === 'string'
+      && (msg.type === 'sdk-ask-pending' || msg.type === 'sdk-ask-resolved' || msg.type === 'sdk-ask-timeout'
+          || msg.type === 'ask-hook-pending' || msg.type === 'ask-hook-resolved' || msg.type === 'ask-hook-timeout')) {
+    _notifyParentPending(msg);
   }
 }
 

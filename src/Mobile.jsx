@@ -542,6 +542,7 @@ class Mobile extends AppBase {
                     onLoadSession={(sid) => this.loadSession(sid)}
                     onPendingPermission={this.handlePendingPermission}
                     onPendingPlanApproval={this.handlePendingPlanApproval}
+                    suppressInlineApprovalPanels={true}
                     pendingUploadPaths={this.state.pendingUploadPaths}
                     onUploadPathsConsumed={this.handleUploadPathsConsumed}
                     onMobileOpenFile={this._handleMobileOpenFile}

@@ -2399,6 +2399,38 @@ const i18nData = {
     "tr": "Tüm Claude oturumları sonlandırılacak.",
     "uk": "Усі сеанси Claude буде завершено."
   },
+  "electron.approval.notify.title.ptyPlan": {
+    "zh": "计划审批", "en": "Plan review", "zh-TW": "計劃審批",
+    "ko": "계획 검토", "ja": "プラン審査", "de": "Plan-Überprüfung",
+    "es": "Revisar plan", "fr": "Examen du plan", "it": "Revisione del piano",
+    "da": "Plan-gennemgang", "pl": "Przegląd planu", "ru": "Обзор плана",
+    "ar": "مراجعة الخطة", "no": "Plan-gjennomgang", "pt-BR": "Revisar plano",
+    "th": "ตรวจสอบแผน", "tr": "Plan incelemesi", "uk": "Перегляд плану"
+  },
+  "electron.approval.notify.body.ptyPlan": {
+    "zh": "{project} 中的计划等待审批", "en": "Plan in {project}", "zh-TW": "{project} 的計劃等待審批",
+    "ko": "{project}의 계획", "ja": "{project} のプラン", "de": "Plan in {project}",
+    "es": "Plan en {project}", "fr": "Plan dans {project}", "it": "Piano in {project}",
+    "da": "Plan i {project}", "pl": "Plan w {project}", "ru": "План в {project}",
+    "ar": "خطة في {project}", "no": "Plan i {project}", "pt-BR": "Plano em {project}",
+    "th": "แผนใน {project}", "tr": "{project} içinde plan", "uk": "План у {project}"
+  },
+  "electron.approval.notify.title.ask": {
+    "zh": "需要回答", "en": "Question", "zh-TW": "需要回答",
+    "ko": "질문", "ja": "質問", "de": "Frage",
+    "es": "Pregunta", "fr": "Question", "it": "Domanda",
+    "da": "Spørgsmål", "pl": "Pytanie", "ru": "Вопрос",
+    "ar": "سؤال", "no": "Spørsmål", "pt-BR": "Pergunta",
+    "th": "คำถาม", "tr": "Soru", "uk": "Питання"
+  },
+  "electron.approval.notify.body.ask": {
+    "zh": "{project} 中的提问", "en": "Question in {project}", "zh-TW": "{project} 中的提問",
+    "ko": "{project}의 질문", "ja": "{project} の質問", "de": "Frage in {project}",
+    "es": "Pregunta en {project}", "fr": "Question dans {project}", "it": "Domanda in {project}",
+    "da": "Spørgsmål i {project}", "pl": "Pytanie w {project}", "ru": "Вопрос в {project}",
+    "ar": "سؤال في {project}", "no": "Spørsmål i {project}", "pt-BR": "Pergunta em {project}",
+    "th": "คำถามใน {project}", "tr": "{project} içinde soru", "uk": "Питання у {project}"
+  },
   "cli.userNameRequired": {
     "zh": "错误: --user-name 需要一个名称参数",
     "en": "Error: --user-name requires a name argument",

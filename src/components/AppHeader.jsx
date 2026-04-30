@@ -1480,6 +1480,41 @@ class AppHeader extends React.Component {
         </Space>
 
         <Space size={12} align="center" className={styles.headerRightRow}>
+          {(() => {
+            // 持久 bell：当存在被 ESC/点遮罩 minimised 的 pending（dismissedIds 命中 approvalGlobal 中的 id），
+            // 或本 tab 在 main 端有 ownPending 但本地 approvalGlobal 为空（WS 重连/丢状态边缘），
+            // 渲染一个 bell 按钮供用户主动唤起 modal。点击 → onApprovalReopen 清 dismissedIds，
+            // ApprovalModal 的 visibleKinds 由此重新命中显示。
+            const ag = this.props.approvalGlobal;
+            const adi = this.props.approvalDismissedIds;
+            const own = this.props.approvalOwnPending || { ask: 0, ptyPlan: 0 };
+            if (!ag || !this.props.onApprovalReopen) return null;
+            let dismissedActive = 0;
+            if (ag.ask?.ask?.id != null && adi instanceof Set && adi.has(`ask:${ag.ask.ask.id}`)) dismissedActive++;
+            if (ag.ptyPlan?.ptyPlan?.id != null && adi instanceof Set && adi.has(`ptyPlan:${ag.ptyPlan.ptyPlan.id}`)) dismissedActive++;
+            const localEmpty = !ag.ask?.ask && !ag.ptyPlan?.ptyPlan;
+            const orphanCount = localEmpty ? ((own.ask || 0) + (own.ptyPlan || 0)) : 0;
+            const total = dismissedActive + orphanCount;
+            if (total === 0) return null;
+            const titleKey = dismissedActive > 0 ? 'ui.approval.bell.reopen' : 'ui.approval.bell.orphan';
+            const titleFallback = dismissedActive > 0 ? 'Reopen approval modal' : 'Server has pending approvals';
+            const _tr = (k, p, f) => { try { const r = t(k, p); return (r && r !== k) ? r : f; } catch { return f; } };
+            return (
+              <button
+                type="button"
+                className={styles.approvalBell}
+                aria-label={_tr(titleKey, null, titleFallback)}
+                title={_tr(titleKey, null, titleFallback)}
+                onClick={() => this.props.onApprovalReopen && this.props.onApprovalReopen()}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 2a6 6 0 0 0-6 6v3.5L4.5 14a1 1 0 0 0 .8 1.6h13.4a1 1 0 0 0 .8-1.6L18 11.5V8a6 6 0 0 0-6-6z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+                  <path d="M10 18a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+                </svg>
+                {total > 0 && <span className={styles.approvalBellBadge}>{total}</span>}
+              </button>
+            );
+          })()}
           {countdownText && viewMode === 'raw' && (
             <Tag className={styles.headerCountdownTag} style={{ color: countdownText === t('ui.cacheExpired') ? 'var(--color-error-light)' : 'var(--text-secondary)' }}>
               {t('ui.cacheCountdown', { type: cacheType ? `(${cacheType})` : '' })}
@@ -1704,6 +1739,34 @@ class AppHeader extends React.Component {
                 style={{ width: 100 }}
               />
             </div>
+            {this.props.approvalPrefs && this.props.onApprovalPrefsChange && (
+              <>
+                <div className={styles.settingsItem}>
+                  <span className={styles.settingsLabel}>{t('ui.approval.settings.modalEnabled')}</span>
+                  <Switch
+                    size="small"
+                    checked={this.props.approvalPrefs.modalEnabled !== false}
+                    onChange={(checked) => this.props.onApprovalPrefsChange({ modalEnabled: checked })}
+                  />
+                </div>
+                <div className={styles.settingsItem}>
+                  <span className={styles.settingsLabel}>{t('ui.approval.settings.soundEnabled')}</span>
+                  <Switch
+                    size="small"
+                    checked={!!this.props.approvalPrefs.soundEnabled}
+                    onChange={(checked) => this.props.onApprovalPrefsChange({ soundEnabled: checked })}
+                  />
+                </div>
+                <div className={styles.settingsItem}>
+                  <span className={styles.settingsLabel}>{t('ui.approval.settings.notifyOnlyWhenHidden')}</span>
+                  <Switch
+                    size="small"
+                    checked={this.props.approvalPrefs.notifyOnlyWhenHidden !== false}
+                    onChange={(checked) => this.props.onApprovalPrefsChange({ notifyOnlyWhenHidden: checked })}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <div className={styles.settingsGroupBox}>
             <div className={styles.settingsItem}>

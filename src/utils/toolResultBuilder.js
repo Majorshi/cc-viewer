@@ -31,6 +31,7 @@ export function createEmptyToolState() {
     askAnswerMap: {},
     planApprovalMap: {},
     latestPlanContent: null,
+    latestPlanFilePath: null,
     _fileState: {},
     _editOrder: [],
   };
@@ -55,6 +56,17 @@ export function appendToolResultMap(state, messages, startIndex) {
           if (parsed.name === 'Write' && parsed.input?.file_path
             && /[/\\]\.claude[/\\]plans[/\\]/.test(parsed.input.file_path) && parsed.input.content) {
             state.latestPlanContent = parsed.input.content;
+          }
+          // ExitPlanMode V2: input 直接携带 plan + planFilePath（normalizeToolInput 注入）
+          // 不依赖前置 Write/Edit，是 multi-agent-room 等无前置场景的核心数据源
+          if (parsed.name === 'ExitPlanMode' && parsed.input && typeof parsed.input === 'object') {
+            if (typeof parsed.input.plan === 'string' && parsed.input.plan.trim()) {
+              state.latestPlanContent = parsed.input.plan;
+              state._planDirty = (state._planDirty || 0) + 1;
+            }
+            if (typeof parsed.input.planFilePath === 'string' && parsed.input.planFilePath) {
+              state.latestPlanFilePath = parsed.input.planFilePath;
+            }
           }
           // Edit → editSnapshotMap + _fileState 更新
           if (parsed.name === 'Edit' && parsed.input) {
@@ -179,9 +191,11 @@ export function appendToolResultMap(state, messages, startIndex) {
               planApprovalMap[block.tool_use_id] = parsePlanApproval(resultText);
             }
             state._planDirty = (state._planDirty || 0) + 1;
-            // Plan 审批完成（approved/rejected）后重置 latestPlanContent，
-            // 防止下一个 plan 周期显示旧内容
+            // Plan 审批完成（approved/rejected）后无条件重置 latestPlanContent / latestPlanFilePath，
+            // 防止下一个 plan 周期显示旧内容。已审批卡片的 V2 plan 渲染由 ChatMessage 的
+            // approval.planContent || inp.plan || planFileContents 兜底链承担，不依赖 latestPlanContent。
             state.latestPlanContent = null;
+            state.latestPlanFilePath = null;
           }
         }
       }

@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { Collapse, Typography, Radio, Checkbox, Input, Button, Tooltip, Popover, message } from 'antd';
 import { escapeHtml, truncateText, getSvgAvatar } from '../utils/helpers';
 import MarkdownBlock from './MarkdownBlock';
@@ -7,6 +8,7 @@ import { renderAssistantText } from '../utils/systemTags';
 import { apiUrl } from '../utils/apiUrl';
 import { isMobile, isIOS, isPad } from '../env';
 import AskQuestionForm from './AskQuestionForm';
+import { ApprovalPortalContext } from './ApprovalPortalContext';
 import { t } from '../i18n';
 import { tc } from '../utils/tClaude';
 import { isPlanApprovalPrompt } from '../utils/promptClassifier';
@@ -130,6 +132,7 @@ class ChatMessage extends React.Component {
       p.ptyPrompt !== n.ptyPrompt || p.cliMode !== n.cliMode ||
       p.lastPendingAskId !== n.lastPendingAskId || p.lastPendingPlanId !== n.lastPendingPlanId ||
       p.activePlanPrompt !== n.activePlanPrompt || p.activeDangerousPrompt !== n.activeDangerousPrompt ||
+      p.activePtyPlanId !== n.activePtyPlanId ||
       p.requestIndex !== n.requestIndex || p.cacheTotalTokens !== n.cacheTotalTokens || p.label !== n.label || p.isTeammate !== n.isTeammate ||
       p.userProfile !== n.userProfile || p.modelInfo !== n.modelInfo ||
       p.resultText !== n.resultText || p.toolName !== n.toolName ||
@@ -468,13 +471,22 @@ class ChatMessage extends React.Component {
       const isPending = approval.status === 'pending';
       const isInteractive = isPending && this.props.cliMode && tu.id === this.props.lastPendingPlanId;
 
-      // pending 状态下提取 plan 内容：
-      // 1. 优先从跨消息追踪的 latestPlanContent（Write 到 .claude/plans/ 的内容，可能在前 1-2 个请求中）
-      // 2. 回退到同一 response 中 Write 工具的内容
-      // 3. 最后回退到 ExitPlanMode 之前的 text blocks
+      // pending 状态下提取 plan 内容（优先级从高到低）：
+      // 1. tool_use.input.plan（Claude Code 2.x ExitPlanModeV2Tool 的 normalizeToolInput 注入）
+      // 2. tool_use.input.planFilePath → 异步 fetch 缓存（multi-agent-room 等场景关键）
+      // 3. 跨消息追踪的 latestPlanContent（Write 到 .claude/plans/ 的内容）
+      // 4. 同一 response 中 Write 工具的内容
+      // 5. ExitPlanMode 之前的 text blocks
       let planTextContent = null;
       if (isPending) {
-        planTextContent = this.props.latestPlanContent || null;
+        if (typeof inp.plan === 'string' && inp.plan.trim()) {
+          planTextContent = inp.plan;
+        }
+        if (!planTextContent && typeof inp.planFilePath === 'string' && inp.planFilePath
+          && this.props.planFileContents && this.props.planFileContents[inp.planFilePath]) {
+          planTextContent = this.props.planFileContents[inp.planFilePath];
+        }
+        if (!planTextContent) planTextContent = this.props.latestPlanContent || null;
         if (!planTextContent && Array.isArray(this.props.content)) {
           for (const b of this.props.content) {
             if (b === tu) break;
@@ -496,12 +508,19 @@ class ChatMessage extends React.Component {
       }
 
       // 已批准且有计划内容 → 渲染为蓝色边框的 plan 视图
-      if (approval.status === 'approved' && approval.planContent) {
-        return (
-          <div key={tu.id} className={styles.bubblePlan}>
-            <MarkdownBlock text={approval.planContent} />
-          </div>
-        );
+      // approval.planContent 可能为空（V2 tool_result 文本不含 ## Approved Plan: 区块时），用 inp.plan / planFilePath 兜底
+      if (approval.status === 'approved') {
+        const approvedText = approval.planContent
+          || (typeof inp.plan === 'string' && inp.plan.trim() ? inp.plan : '')
+          || (typeof inp.planFilePath === 'string' && inp.planFilePath && this.props.planFileContents
+            ? (this.props.planFileContents[inp.planFilePath] || '') : '');
+        if (approvedText) {
+          return (
+            <div key={tu.id} className={styles.bubblePlan}>
+              <MarkdownBlock text={approvedText} />
+            </div>
+          );
+        }
       }
 
       // plan 审批选项：优先用 ptyPrompt 检测到的，否则用内置默认选项
@@ -524,7 +543,7 @@ class ChatMessage extends React.Component {
       const statusKey = approval.status === 'approved' ? 'ui.planApproved'
         : approval.status === 'rejected' ? 'ui.planRejected'
         : approval.status === 'ultraplan' ? 'ui.planUltraplan' : 'ui.planPending';
-      return (
+      const planModeBoxNode = (
         <div key={tu.id} className={`${styles.planModeBox} ${statusClass}`}>
           {isInteractive && (
             <svg className={`${styles.borderSvg} ${styles.borderSvgInset}`} preserveAspectRatio="none">
@@ -624,6 +643,24 @@ class ChatMessage extends React.Component {
           )}
         </div>
       );
+      // PTY plan portal: when the global modal is showing the same active plan id,
+      // ReactDOM.createPortal moves this entire planModeBox subtree (including the feedback
+      // textarea state) into the modal slot WITHOUT unmounting — local state survives.
+      // Inline rendering resumes when modal is dismissed or the prompt resolves.
+      // Only interactive cards qualify (resolved/historical cards never portal).
+      // ptyPlanCardId 用 tu.id（ExitPlanMode tool_use id）作权威源，与 ChatView pendingPtyPlan.id（=lastPendingPlanId）同源。
+      const ptyPlanCardId = isInteractive ? String(tu.id) : '';
+      return (
+        <ApprovalPortalContext.Consumer key={tu.id}>
+          {(ctx) => {
+            const match = !!(ctx?.ptyPlanSlot
+              && ctx?.activePtyPlanId != null
+              && ptyPlanCardId !== ''
+              && String(ctx.activePtyPlanId) === ptyPlanCardId);
+            return match ? ReactDOM.createPortal(planModeBoxNode, ctx.ptyPlanSlot) : planModeBoxNode;
+          }}
+        </ApprovalPortalContext.Consumer>
+      );
     }
 
     // SendMessage → render message content directly (no tool shell)
@@ -702,7 +739,7 @@ class ChatMessage extends React.Component {
   }
 
   renderAskQuestionInteractive(toolId, questions) {
-    return (
+    const node = (
       <AskQuestionForm
         key={toolId}
         questions={questions}
@@ -712,6 +749,30 @@ class ChatMessage extends React.Component {
           }
         }}
       />
+    );
+    // The form keeps a single React instance regardless of which DOM mount it lands in.
+    // When the global modal claims this toolId, portal into its slot — the inline parent
+    // sees an empty placeholder so the chat layout stays stable. Otherwise render inline.
+    return (
+      <ApprovalPortalContext.Consumer>
+        {(ctx) => {
+          // Portal 命中两个分支：
+          //   1) SDK 真实 toolId 模式：activeAskId === toolId 严格匹配
+          //   2) PTY-hook 模式：activeAskId='__ask__'，但只允许 owner ChatMessage 通配命中
+          //      —— 即必须同时满足 lastPendingAskId===toolId（owner-idx 已保证唯一性），
+          //         否则历史所有真实 toolId 都会被通配误命中，重现旧的双份 portal bug。
+          //      这条分支替代了 ApprovalModal 自渲染 fallback：让 inline 卡片唯一实例 portal
+          //      到 askSlot，状态完全互通（modal 与 inline 是同一 React 实例）。
+          if (!ctx || !ctx.askSlot || ctx.activeAskId == null) return node;
+          const isStrictMatch = String(ctx.activeAskId) === String(toolId);
+          const isPtyOwnerMatch = ctx.activeAskId === '__ask__'
+            && this.props.lastPendingAskId === toolId;
+          if (isStrictMatch || isPtyOwnerMatch) {
+            return ReactDOM.createPortal(node, ctx.askSlot);
+          }
+          return node;
+        }}
+      </ApprovalPortalContext.Consumer>
     );
   }
 

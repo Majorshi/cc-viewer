@@ -1084,6 +1084,49 @@
   transform: scaleX(-1);
 }
 
+/* Approval bell button — 持久重开 ApprovalModal 入口（dismiss 后用户手动唤起） */
+.approvalBell {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  box-sizing: border-box;
+  color: var(--color-warning, #faad14);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  background: none;
+  border: none;
+}
+.approvalBell:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+.approvalBell:focus-visible {
+  outline: 2px solid var(--primary-color, #1677ff);
+  outline-offset: 1px;
+}
+.approvalBellBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  background: var(--color-error, #ff4d4f);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  border-radius: 7px;
+  text-align: center;
+  font-weight: 600;
+}
+
 
 .disabledMenuItem {
   color: var(--text-disabled);

@@ -88,6 +88,23 @@ class AppBase extends React.Component {
       proxyProfiles: [],
       activeProxyId: 'max',
       defaultConfig: null,
+      // ─── Approval modal global state ───
+      // approvalGlobal: { ptyPlan?, ask? } currently active in the (single) ChatView mounted in this app instance.
+      // Each entry carries { id, ..., handlers } as bubbled by ChatView.componentDidUpdate.
+      // Permission and SDK ExitPlanMode stay inline-only — they do NOT pop the global modal.
+      approvalGlobal: { ptyPlan: null, ask: null },
+      // approvalDismissedIds: pending ids the user has chosen to minimize. Reopens via bell / chip.
+      approvalDismissedIds: new Set(),
+      // approvalOtherTabs: aggregated state from other Electron tabs, pushed by main via tabBridge.onApprovalBroadcast.
+      approvalOtherTabs: [],
+      // approvalOwnPending: 当前 tab 在 main 进程聚合的 pending 计数（来自 approval-broadcast.ownPending）。
+      // 仅信息性使用（bell badge 显示「服务端记得有 N 条 pending」），不试图重写 approvalGlobal——
+      // approvalGlobal 含 questions / handlers 闭包无法跨 IPC 序列化，权威源是 ChatView 的 pendingAsk / pendingPtyPlan。
+      approvalOwnPending: { ask: 0, ptyPlan: 0 },
+      // ownTabId: numeric tab id pushed by main once on view init (electron only). null in pure web mode.
+      ownTabId: null,
+      // approvalPrefs: user toggles persisted to /api/preferences (defaults sized for least surprise).
+      approvalPrefs: { modalEnabled: true, soundEnabled: false, notifyOnlyWhenHidden: true },
     };
     this.eventSource = null;
     this._currentSessionId = null;
@@ -215,6 +232,35 @@ class AppBase extends React.Component {
       if (data.claudeAvailable === false) this.setState({ claudeMissing: true });
     }).catch(() => {});
 
+    // ─── Approval modal: subscribe to electron main → tabBridge ──────────────────
+    // No-op when running in pure web mode — window.tabBridge is only injected by tab-content-preload.js.
+    // Subscription handles保存到 instance 以便 unmount 时卸载，避免 webContents reload 累加监听。
+    this._tabBridgeDisposers = [];
+    if (typeof window !== 'undefined' && window.tabBridge) {
+      try {
+        const offTabId = window.tabBridge.onTabIdInit?.((tabId) => {
+          this.setState({ ownTabId: tabId });
+        });
+        const offBroadcast = window.tabBridge.onApprovalBroadcast?.((payload) => {
+          if (!payload) return;
+          // ownPending 只取计数（main 进程的 ptyPlan/ask Map 序列化为 [{id, projectName, ...}]）。
+          // 不重写 approvalGlobal——闭包内的 handlers / questions 无法跨 IPC 还原，
+          // 权威源仍是 ChatView 的 pendingAsk / pendingPtyPlan（WS 重连服务端会重放）。
+          const op = payload.ownPending;
+          const ownPendingCount = (op && typeof op === 'object')
+            ? { ask: Array.isArray(op.ask) ? op.ask.length : 0, ptyPlan: Array.isArray(op.ptyPlan) ? op.ptyPlan.length : 0 }
+            : { ask: 0, ptyPlan: 0 };
+          this.setState((prev) => ({
+            ownTabId: payload.ownTabId != null ? payload.ownTabId : prev.ownTabId,
+            approvalOtherTabs: Array.isArray(payload.others) ? payload.others : [],
+            approvalOwnPending: ownPendingCount,
+          }));
+        });
+        if (typeof offTabId === 'function') this._tabBridgeDisposers.push(offTabId);
+        if (typeof offBroadcast === 'function') this._tabBridgeDisposers.push(offBroadcast);
+      } catch {}
+    }
+
     // 获取用户偏好设置（包含 filterIrrelevant）
     // 用 Promise 保存，供 initSSE 等待（resume_prompt 需要知道 resumeAutoChoice）
     this._prefsReady = fetch(apiUrl('/api/preferences'))
@@ -245,6 +291,16 @@ class AppBase extends React.Component {
         }
         if (typeof data.autoApproveSeconds === 'number') {
           this.setState({ autoApproveSeconds: data.autoApproveSeconds });
+        }
+        // Approval modal preferences (defaults already in initial state — only override when persisted).
+        if (data.approvalModal && typeof data.approvalModal === 'object') {
+          this.setState(prev => ({
+            approvalPrefs: {
+              modalEnabled: data.approvalModal.modalEnabled !== undefined ? !!data.approvalModal.modalEnabled : prev.approvalPrefs.modalEnabled,
+              soundEnabled: data.approvalModal.soundEnabled !== undefined ? !!data.approvalModal.soundEnabled : prev.approvalPrefs.soundEnabled,
+              notifyOnlyWhenHidden: data.approvalModal.notifyOnlyWhenHidden !== undefined ? !!data.approvalModal.notifyOnlyWhenHidden : prev.approvalPrefs.notifyOnlyWhenHidden,
+            },
+          }));
         }
         if (data.themeColor) {
           this.setState({ themeColor: data.themeColor });
@@ -384,6 +440,12 @@ class AppBase extends React.Component {
   }
 
   componentWillUnmount() {
+    if (Array.isArray(this._tabBridgeDisposers)) {
+      for (const off of this._tabBridgeDisposers) {
+        try { off(); } catch {}
+      }
+      this._tabBridgeDisposers = null;
+    }
     if (this.eventSource) this.eventSource.close();
     if (this._localLogES) { this._localLogES.close(); this._localLogES = null; }
     if (this._autoSelectTimer) clearTimeout(this._autoSelectTimer);
@@ -1333,6 +1395,76 @@ class AppBase extends React.Component {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ autoApproveSeconds: seconds }),
+    }).catch(() => {});
+  };
+
+  // ─── Approval modal: ChatView -> AppBase bubbling handlers ───────────────────────
+  // Inject projectName from AppBase state so the modal chip / Notification body have
+  // human-readable session context. ChatView itself doesn't track project name.
+  _injectProjectName = (data, slot) => {
+    if (!data) return data;
+    const projectName = this.state.projectName || '';
+    if (!projectName) return data;
+    const innerKey = slot; // 'ptyPlan' | 'ask'
+    if (data[innerKey] && data[innerKey].projectName === undefined) {
+      return { ...data, [innerKey]: { ...data[innerKey], projectName } };
+    }
+    return data;
+  };
+
+  // Generic transition helper that mirrors a kind in/out of approvalGlobal AND wipes stale
+  // dismissed entries for that kind. Used by both ask (static id reuse) and ptyPlan (timestamp ids
+  // could repeat after long sessions). PTY plan and ask share the same dismiss-on-transition policy.
+  _setApprovalKind = (kind, data) => {
+    const enriched = this._injectProjectName(data, kind);
+    this.setState(prev => {
+      const next = { ...prev.approvalGlobal };
+      if (enriched) next[kind] = enriched;
+      else next[kind] = null;
+      const dismissed = new Set(prev.approvalDismissedIds);
+      let changed = false;
+      for (const id of dismissed) {
+        if (id.startsWith(`${kind}:`)) { dismissed.delete(id); changed = true; }
+      }
+      return changed
+        ? { approvalGlobal: next, approvalDismissedIds: dismissed }
+        : { approvalGlobal: next };
+    });
+  };
+
+  handleApprovalAsk = (data) => this._setApprovalKind('ask', data);
+  handleApprovalPtyPlan = (data) => this._setApprovalKind('ptyPlan', data);
+
+  // Modal calls this when user presses ESC / clicks backdrop. Pending state untouched — only UI hides.
+  handleApprovalDismiss = (kind, id) => {
+    if (!kind || !id) return;
+    this.setState(prev => {
+      const next = new Set(prev.approvalDismissedIds);
+      next.add(`${kind}:${id}`);
+      return { approvalDismissedIds: next };
+    });
+  };
+
+  // Bell / chip click reopens minimised modal — clear all dismissed entries currently pending.
+  handleApprovalReopen = () => {
+    this.setState({ approvalDismissedIds: new Set() });
+  };
+
+  // Cross-tab jump (electron only). Renderer doesn't directly switch — main does it.
+  handleApprovalJumpTab = (tabId) => {
+    if (typeof window !== 'undefined' && window.tabBridge?.jumpToTab && tabId != null) {
+      try { window.tabBridge.jumpToTab(tabId); } catch {}
+    }
+  };
+
+  handleApprovalPrefsChange = (patch) => {
+    // 同源 next：setState + fetch body 都用同一个 next，避免 rapid toggle 下第二次 POST 读到 stale state 漏 patch
+    const next = { ...this.state.approvalPrefs, ...patch };
+    this.setState({ approvalPrefs: next });
+    fetch(apiUrl('/api/preferences'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approvalModal: next }),
     }).catch(() => {});
   };
 

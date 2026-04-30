@@ -5168,6 +5168,86 @@ const i18nData = {
     "ar": "موافقة تلقائية", "no": "Auto-godkjenn", "pt-BR": "Auto-aprovar",
     "th": "อนุมัติอัตโนมัติ", "tr": "Otomatik onayla", "uk": "Авто-схвалення"
   },
+  "ui.approval.modal.title.ptyPlan": {
+    "zh": "计划审批", "en": "Plan review", "zh-TW": "計劃審批",
+    "ko": "계획 검토", "ja": "プラン審査", "de": "Plan-Überprüfung",
+    "es": "Revisar plan", "fr": "Examen du plan", "it": "Revisione del piano",
+    "da": "Plan-gennemgang", "pl": "Przegląd planu", "ru": "Обзор плана",
+    "ar": "مراجعة الخطة", "no": "Plan-gjennomgang", "pt-BR": "Revisar plano",
+    "th": "ตรวจสอบแผน", "tr": "Plan incelemesi", "uk": "Перегляд плану"
+  },
+  "ui.approval.modal.title.ask": {
+    "zh": "需要回答", "en": "Question", "zh-TW": "需要回答",
+    "ko": "질문", "ja": "質問", "de": "Frage",
+    "es": "Pregunta", "fr": "Question", "it": "Domanda",
+    "da": "Spørgsmål", "pl": "Pytanie", "ru": "Вопрос",
+    "ar": "سؤال", "no": "Spørsmål", "pt-BR": "Pergunta",
+    "th": "คำถาม", "tr": "Soru", "uk": "Питання"
+  },
+  "ui.approval.modal.dismiss": {
+    "zh": "最小化（保留待审批）", "en": "Minimise (keep pending)", "zh-TW": "最小化（保留待審批）",
+    "ko": "최소화 (보류 유지)", "ja": "最小化 (保留)", "de": "Minimieren",
+    "es": "Minimizar", "fr": "Minimiser", "it": "Minimizza",
+    "da": "Minimer", "pl": "Minimalizuj", "ru": "Свернуть",
+    "ar": "تصغير", "no": "Minimer", "pt-BR": "Minimizar",
+    "th": "ย่อ", "tr": "Küçült", "uk": "Згорнути"
+  },
+  "ui.approval.modal.dismissHint": {
+    "zh": "ESC 或点击外部最小化（待审批保留）", "en": "ESC or click outside to minimise (pending stays)", "zh-TW": "ESC 或點擊外部最小化（保留待審批）",
+    "ko": "ESC 또는 외부 클릭으로 최소화 (보류 유지)", "ja": "ESC または外側をクリックして最小化", "de": "ESC oder außen klicken zum Minimieren",
+    "es": "ESC o clic fuera para minimizar", "fr": "ESC ou cliquer dehors pour minimiser", "it": "ESC o clic fuori per minimizzare",
+    "da": "ESC eller klik udenfor for at minimere", "pl": "ESC lub kliknij na zewnątrz aby zminimalizować", "ru": "ESC или клик снаружи — свернуть",
+    "ar": "ESC أو انقر خارجًا للتصغير", "no": "ESC eller klikk utenfor for å minimere", "pt-BR": "ESC ou clique fora para minimizar",
+    "th": "ESC หรือคลิกนอกเพื่อย่อ", "tr": "ESC veya dışarı tıklayarak küçült", "uk": "ESC або клік зовні — згорнути"
+  },
+  "ui.approval.bell.reopen": {
+    "zh": "重新打开审批弹层", "en": "Reopen approval modal", "zh-TW": "重新開啟審批彈層",
+    "ko": "승인 모달 다시 열기", "ja": "承認モーダルを再表示", "de": "Genehmigungs-Modal erneut öffnen",
+    "es": "Reabrir modal de aprobación", "fr": "Rouvrir le modal d'approbation", "it": "Riapri modal di approvazione",
+    "da": "Genåbn godkendelsesmodal", "pl": "Otwórz ponownie modal akceptacji", "ru": "Открыть окно одобрения",
+    "ar": "إعادة فتح نافذة الموافقة", "no": "Åpne godkjenningsmodal igjen", "pt-BR": "Reabrir modal de aprovação",
+    "th": "เปิดโมดอลอนุมัติอีกครั้ง", "tr": "Onay modalını yeniden aç", "uk": "Знову відкрити вікно схвалення"
+  },
+  "ui.approval.bell.orphan": {
+    "zh": "服务端仍有待处理审批", "en": "Server has pending approvals", "zh-TW": "伺服器仍有待處理審批",
+    "ko": "서버에 대기 중인 승인이 있습니다", "ja": "サーバーに保留中の承認があります", "de": "Server hat ausstehende Genehmigungen",
+    "es": "El servidor tiene aprobaciones pendientes", "fr": "Le serveur a des approbations en attente", "it": "Il server ha approvazioni in sospeso",
+    "da": "Serveren har afventende godkendelser", "pl": "Serwer ma oczekujące akceptacje", "ru": "На сервере есть ожидающие одобрения",
+    "ar": "يوجد طلبات موافقة معلقة على الخادم", "no": "Serveren har ventende godkjenninger", "pt-BR": "O servidor tem aprovações pendentes",
+    "th": "เซิร์ฟเวอร์มีการอนุมัติที่รอดำเนินการ", "tr": "Sunucuda bekleyen onaylar var", "uk": "На сервері є очікуючі схвалення"
+  },
+  "ui.approval.modal.jumpToSession": {
+    "zh": "→ 前往 {project}", "en": "→ Go to {project}", "zh-TW": "→ 前往 {project}",
+    "ko": "→ {project}로 이동", "ja": "→ {project} へ", "de": "→ Zu {project}",
+    "es": "→ Ir a {project}", "fr": "→ Aller à {project}", "it": "→ Vai a {project}",
+    "da": "→ Gå til {project}", "pl": "→ Idź do {project}", "ru": "→ Перейти к {project}",
+    "ar": "→ انتقل إلى {project}", "no": "→ Gå til {project}", "pt-BR": "→ Ir para {project}",
+    "th": "→ ไปที่ {project}", "tr": "→ {project}'a git", "uk": "→ Перейти до {project}"
+  },
+  "ui.approval.settings.modalEnabled": {
+    "zh": "弹出全局审批 Modal", "en": "Pop-up modal for approvals", "zh-TW": "彈出全域審批 Modal",
+    "ko": "승인 전역 모달 표시", "ja": "承認のグローバルモーダルを表示", "de": "Globales Modal für Genehmigungen",
+    "es": "Modal global para aprobaciones", "fr": "Modal global pour les approbations", "it": "Modal globale per approvazioni",
+    "da": "Global modal til godkendelser", "pl": "Globalny modal dla akceptacji", "ru": "Глобальное модальное для одобрения",
+    "ar": "نافذة عالمية للموافقات", "no": "Global modal for godkjenninger", "pt-BR": "Modal global para aprovações",
+    "th": "Modal ทั่วโลกสำหรับการอนุมัติ", "tr": "Onaylar için global modal", "uk": "Глобальне модальне для схвалень"
+  },
+  "ui.approval.settings.soundEnabled": {
+    "zh": "审批提示音", "en": "Sound on approval", "zh-TW": "審批提示音",
+    "ko": "승인 효과음", "ja": "承認時のサウンド", "de": "Ton bei Genehmigung",
+    "es": "Sonido al aprobar", "fr": "Son lors d'approbation", "it": "Suono all'approvazione",
+    "da": "Lyd ved godkendelse", "pl": "Dźwięk akceptacji", "ru": "Звук одобрения",
+    "ar": "صوت عند الموافقة", "no": "Lyd ved godkjenning", "pt-BR": "Som de aprovação",
+    "th": "เสียงเตือนอนุมัติ", "tr": "Onay sesi", "uk": "Звук схвалення"
+  },
+  "ui.approval.settings.notifyOnlyWhenHidden": {
+    "zh": "仅窗口失焦时通知", "en": "Notify only when hidden", "zh-TW": "僅視窗失焦時通知",
+    "ko": "창이 숨겨졌을 때만 알림", "ja": "非表示時のみ通知", "de": "Nur bei verstecktem Fenster benachrichtigen",
+    "es": "Notificar solo si oculto", "fr": "Notifier seulement si masqué", "it": "Notifica solo se nascosto",
+    "da": "Underret kun ved skjult", "pl": "Powiadamiaj tylko gdy ukryte", "ru": "Уведомлять только когда скрыто",
+    "ar": "إشعار فقط عند الإخفاء", "no": "Varsle kun ved skjult", "pt-BR": "Notificar apenas se oculto",
+    "th": "แจ้งเตือนเฉพาะตอนซ่อน", "tr": "Yalnızca gizliyken bildir", "uk": "Сповіщати лише коли приховано"
+  },
   "ui.dangerApproval": {
     "zh": "操作待审批", "en": "Approval Required", "zh-TW": "操作待審批",
     "ko": "승인 필요", "ja": "承認が必要", "de": "Genehmigung erforderlich",
@@ -6181,6 +6261,26 @@ const i18nData = {
     "th": "กำลังส่ง...",
     "tr": "Gönderiliyor...",
     "uk": "Надсилання..."
+  },
+  "ui.askSubmitRetryHint": {
+    "zh": "提交未送达，请重试",
+    "en": "Submission did not reach the server, please retry",
+    "zh-TW": "提交未送達，請重試",
+    "ko": "제출이 서버에 도달하지 못했습니다. 다시 시도하세요",
+    "ja": "送信が届きませんでした、再試行してください",
+    "de": "Übermittlung nicht erfolgreich, bitte erneut versuchen",
+    "es": "Envío no recibido, por favor reintenta",
+    "fr": "Soumission non reçue, veuillez réessayer",
+    "it": "Invio non ricevuto, riprova",
+    "da": "Indsendelse mislykkedes, prøv igen",
+    "pl": "Nie udało się wysłać, spróbuj ponownie",
+    "ru": "Отправка не удалась, повторите попытку",
+    "ar": "لم يصل الإرسال، الرجاء إعادة المحاولة",
+    "no": "Innsending feilet, prøv igjen",
+    "pt-BR": "Envio não recebido, tente novamente",
+    "th": "ส่งไม่สำเร็จ โปรดลองใหม่",
+    "tr": "Gönderim ulaşmadı, tekrar deneyin",
+    "uk": "Не вдалося надіслати, спробуйте ще раз"
   },
   "ui.askOther": {
     "zh": "其他",
