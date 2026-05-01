@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.6.228 (2026-05-02) — LAN 移动端访问 403 修复 + QR Popover 一点就关修复 + lastPendingPlanId 算法重写
+
+### lastPendingPlanId 算法:历史 plan/ask 永远 pending 误弹
+
+- Fix (P0 — `src/components/ChatView.jsx:991-1029`): 旧算法扫全量 messages,任何 `planApprovalMap[id]` undefined 或 status='pending' 的 ExitPlanMode 都视为 lastPendingPlanId。但 ExitPlanMode V2 / plan-mode 工具不写常规 tool_result 文本(后端用 system 注入接管),`planApprovalMap[id]` 永远 undefined → 历史里任何旧 plan 都无限弹 modal,刷新刷新都跳出来,用户根本没法跳过。改为反向扫到最后一条非空 assistant message,只在该 message 内查 ExitPlanMode/AskUserQuestion——plan/ask 一旦被处理,Claude 才能继续 turn,所以"对话能继续"等同于"先前的 plan/ask 必已被处理"。historyAskIds 收集仍需全量扫(给 Last Response 去重用),独立第一遍处理。同步 lastPendingAskId 也用同样语义。
+
+### LAN 移动端访问 403 host-not-allowed
+
+- Fix (P0 — `server.js:313-336` DNS rebinding 守护): 1.6.227 引入的 Host header 默认 allowlist `localhost,127.0.0.1,::1,[::1]` 把所有 LAN IP 都拦了。手机扫码访问 `http://192.168.x.x:7008?token=...` → 403 host-not-allowed。要求用户手动设 `CCV_ALLOWED_HOSTS` 环境变量与 cc-viewer "手机扫码编程" 核心场景冲突。改默认 allowlist 为 `[loopback四件套] ∪ getAllLocalIps()`(server.js 已有 helper,line 268-277);CCV_ALLOWED_HOSTS 显式设(包括 '*' 关闭防护)时仍完全沿用用户值,与 1.6.227 行为一致,向后兼容。token 仍是必需(server.js:300-310 ACCESS_TOKEN gate);DNS rebinding 攻击者需精确知道用户 LAN IP 才能利用,门槛降低但不增新攻击面;Vite/Cursor 同行也默认放开 LAN。
+
+### QR Popover 一点就关:移动端 hover/focus trigger 不可靠
+
+- Fix (P1 — `src/components/AppHeader.jsx:1531-1573` 二维码 Popover): trigger 原为 `['hover', 'focus']`。桌面 hover OK 但移动端 tap → focus → 立即又触发外部 click 关闭,扫码用户根本来不及对焦。改 `trigger={['click']}` + 受控 `open` state(`qrPopoverOpen`),popover content 最外层 div 加 `onClick={e => e.stopPropagation()}` 防内部点击(QR canvas/Input/Copy 图标)冒泡到外层 click 触发 onOpenChange(false)。桌面端单击打开/再单击或外部空白处关闭,与 hover 的 UX 差异低(QR 不是高频操作),但移动端稳定可扫。
+- Fix (P1 — `src/components/CountryFlag.jsx:18-72` 国旗 Popover): UltraReview 发现同款 hover/focus trigger bug——footer 国旗 popover 在移动端 tap 即关,看不到 region/city/ISP/IP 信息。同款修法:`trigger={['click']}` + 受控 `popoverOpen` state + content `stopPropagation`。
+
 ## 1.6.227 (2026-05-01) — 单 ws 合并 ask 提交回归修复 + 统一文件访问策略 + DNS rebinding 守护
 
 ### 单 ws 合并 wsOpen 条件过严回归

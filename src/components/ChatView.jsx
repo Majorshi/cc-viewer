@@ -994,24 +994,46 @@ class ChatView extends React.Component {
     // 用 owner index 锁定只有一条 message 拿到 lastPendingAskId。
     let lastPendingAskOwnerIdx = -1;
     let lastPendingPlanOwnerIdx = -1;
+    // 先扫历史 askIds(全量,用于 Last Response 去重),不参与 lastPending* 派生。
     for (let _mi = 0; _mi < messages.length; _mi++) {
       const msg = messages[_mi];
       if (msg.role === 'assistant' && Array.isArray(msg.content)) {
         for (const block of msg.content) {
-          if (block.type === 'tool_use' && block.name === 'ExitPlanMode') {
-            const approval = planApprovalMap[block.id];
-            if (!approval || approval.status === 'pending') {
-              lastPendingPlanId = block.id;
-              lastPendingPlanOwnerIdx = _mi;
-            }
-          }
           if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
             historyAskIds.add(block.id);
-            const answers = mergedAskAnswerMap[block.id];
-            if (!answers || Object.keys(answers).length === 0) {
-              lastPendingAskId = block.id;
-              lastPendingAskOwnerIdx = _mi;
-            }
+          }
+        }
+      }
+    }
+    // lastPendingPlanId / lastPendingAskId:**只考虑"最后一条 assistant message"内的工具**。
+    // 原因:ExitPlanMode V2 / plan-mode 工具不会有常规 tool_result 文本(后端用 system 注入接管),
+    //   planApprovalMap[id] 永远 undefined,旧实现把每一个这样的 plan 都标 pending → 历史里任何
+    //   旧 plan 都会无限弹 modal,刷新刷新都跳出来。
+    // 真理:plan/ask 一旦被处理(approved/rejected/answered),Claude 才能继续 turn。所以**只要后面
+    //   还有 assistant message,前面那条 plan/ask 一定已被处理**,不应再视为 pending。
+    let lastAssistantIdx = -1;
+    for (let _mi = messages.length - 1; _mi >= 0; _mi--) {
+      const m = messages[_mi];
+      if (m && m.role === 'assistant' && Array.isArray(m.content) && m.content.length > 0) {
+        lastAssistantIdx = _mi;
+        break;
+      }
+    }
+    if (lastAssistantIdx >= 0) {
+      const lastMsg = messages[lastAssistantIdx];
+      for (const block of lastMsg.content) {
+        if (block.type === 'tool_use' && block.name === 'ExitPlanMode') {
+          const approval = planApprovalMap[block.id];
+          if (!approval || approval.status === 'pending') {
+            lastPendingPlanId = block.id;
+            lastPendingPlanOwnerIdx = lastAssistantIdx;
+          }
+        }
+        if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+          const answers = mergedAskAnswerMap[block.id];
+          if (!answers || Object.keys(answers).length === 0) {
+            lastPendingAskId = block.id;
+            lastPendingAskOwnerIdx = lastAssistantIdx;
           }
         }
       }

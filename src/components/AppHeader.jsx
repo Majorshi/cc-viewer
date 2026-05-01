@@ -43,7 +43,7 @@ const LANG_OPTIONS = [
 class AppHeader extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { countdownText: '', promptModalVisible: false, promptData: [], promptViewMode: 'original', settingsDrawerVisible: false, globalSettingsVisible: false, projectStatsVisible: false, projectStats: null, projectStatsLoading: false, localUrl: '', pluginModalVisible: false, pluginsList: [], pluginsDir: '', deleteConfirmVisible: false, deleteTarget: null, processModalVisible: false, processList: [], processLoading: false, logoDropdownOpen: false, cacheHighlightIdx: null, cacheHighlightFading: false, cdnModalVisible: false, cdnUrl: '', cdnLoading: false, calibrationModel: (v => CALIBRATION_MODELS.some(m => m.value === v) ? v : 'auto')(localStorage.getItem('ccv_calibrationModel') || 'auto'), proxyModalVisible: false, editingProxy: null, editForm: { name: '', baseURL: '', apiKey: '', models: '', activeModel: '' }, logDirDraft: null, _skillsModal: { open: false, loading: false, skills: [], error: null, toggling: new Set() },
+    this.state = { countdownText: '', promptModalVisible: false, promptData: [], promptViewMode: 'original', settingsDrawerVisible: false, globalSettingsVisible: false, projectStatsVisible: false, projectStats: null, projectStatsLoading: false, localUrl: '', pluginModalVisible: false, pluginsList: [], pluginsDir: '', deleteConfirmVisible: false, deleteTarget: null, processModalVisible: false, processList: [], processLoading: false, logoDropdownOpen: false, cacheHighlightIdx: null, cacheHighlightFading: false, cdnModalVisible: false, cdnUrl: '', cdnLoading: false, calibrationModel: (v => CALIBRATION_MODELS.some(m => m.value === v) ? v : 'auto')(localStorage.getItem('ccv_calibrationModel') || 'auto'), proxyModalVisible: false, editingProxy: null, editForm: { name: '', baseURL: '', apiKey: '', models: '', activeModel: '' }, logDirDraft: null, qrPopoverOpen: false, _skillsModal: { open: false, loading: false, skills: [], error: null, toggling: new Set() },
       // 文件系统权威的 skill 列表（/api/skills 返回）；live-tail 下作为 popover chip 和管理弹窗的共享数据源。
       // null=未加载 / false=失败 / [] 或 Array=加载结果。workspace 切换由 componentDidUpdate + seq 控制。
       _fsSkills: null };
@@ -1532,7 +1532,9 @@ class AppHeader extends React.Component {
             <>
 <Popover
               content={
-                <div className={styles.qrcodePopover}>
+                /* stopPropagation 防止 popover 内部点击(QR canvas / Input / Copy 图标)冒泡到外层 click 触发 onOpenChange(false)。
+                   单独触发关闭只通过 trigger 元素自身或外部空白处。 */
+                <div className={styles.qrcodePopover} onClick={e => e.stopPropagation()}>
                   <div className={styles.qrcodeTitle}>{t('ui.scanToCoding')} <ConceptHelp doc="QRCode" /></div>
                   <QRCodeCanvas value={this.state.localUrl} size={200} bgColor={themeColor === 'light' ? '#ffffff' : '#141414'} fgColor={themeColor === 'light' ? '#1a1a1a' : '#d9d9d9'} level="M" />
                   <Input
@@ -1552,7 +1554,11 @@ class AppHeader extends React.Component {
                   />
                 </div>
               }
-              trigger={['hover', 'focus']}
+              /* 移动端 hover/focus 不可靠(tap → focus → 立即触发外部 click 关闭),改 click 受控:
+                 单击触发体打开 / 再次单击或外部空白处关闭。stopPropagation 确保 popover 内点击不关。 */
+              trigger={['click']}
+              open={this.state.qrPopoverOpen}
+              onOpenChange={(o) => this.setState({ qrPopoverOpen: o })}
               placement="bottomRight"
               overlayInnerStyle={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-hover)', borderRadius: 8, padding: '8px 8px' }}
             >

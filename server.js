@@ -311,11 +311,15 @@ async function handleRequest(req, res) {
   }
 
   // DNS rebinding 防护:即使带了正确 token,Host header 必须落在 allowlist 里。
-  // 默认放行 localhost/127.0.0.1/IPv6 loopback;LAN 用户通过 CCV_ALLOWED_HOSTS=192.168.1.10,localhost 添加。
-  // 设为 '*' 显式关闭(用户自担风险);静态资源和 OPTIONS 预检不挡。
+  // 默认放行 loopback + 本机所有 LAN IPv4(getAllLocalIps()):cc-viewer 核心场景就是手机扫码访问 LAN URL,
+  // 要求用户每次手动设 CCV_ALLOWED_HOSTS 不可接受。token 仍是必需(server.js:300-310 ACCESS_TOKEN gate),
+  // DNS rebinding 攻击者需精确知道用户 LAN IP 才能利用,门槛降低但不增新攻击面;Vite/Cursor 同行也默认放开 LAN。
+  // CCV_ALLOWED_HOSTS 显式设(包括 '*' 关闭防护)时完全沿用用户值,与 1.6.227 行为一致,向后兼容。
+  // 静态资源和 OPTIONS 预检不挡。
   if (!isStaticAsset && method !== 'OPTIONS') {
-    const allowedHosts = (process.env.CCV_ALLOWED_HOSTS
-      || 'localhost,127.0.0.1,::1,[::1]').split(',').map(s => s.trim()).filter(Boolean);
+    const allowedHosts = process.env.CCV_ALLOWED_HOSTS
+      ? process.env.CCV_ALLOWED_HOSTS.split(',').map(s => s.trim()).filter(Boolean)
+      : ['localhost', '127.0.0.1', '::1', '[::1]', ...getAllLocalIps()];
     if (!allowedHosts.includes('*')) {
       const hostHeader = (req.headers.host || '').toLowerCase();
       // 端口剥离:RFC 3986 要求 IPv6 Host 必须带 brackets `[::1]:port`,bare `::1` 末尾 `\d` 会被错剥成 `:`。
