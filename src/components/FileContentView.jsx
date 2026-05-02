@@ -518,6 +518,22 @@ export default function FileContentView({ filePath, onClose, editorSession, scro
 
   saveRef.current = doSave;
 
+  // MdxEditor 模式下补 Ctrl+S/Cmd+S 快捷键。
+  // CodeMirror 模式有自己的 keymap（L636-639 走 saveRef），不走这里；
+  // useMdxEditor 守卫避免双触发。MdxEditor contenteditable 不拦 Ctrl+S（已 grep 确认 lib 无内置 handler），
+  // document bubble 阶段监听足够；preventDefault 阻止浏览器原生「另存为」对话框。
+  useEffect(() => {
+    if (!useMdxEditor) return;
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        saveRef.current?.();  // 内部已有 isDirty 守卫，不脏不发请求
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [useMdxEditor]);
+
   // 纵向滚动同步：CodeMirror 滚动时同步行号栏
   const scrollSyncExtension = useMemo(() =>
     EditorView.updateListener.of((update) => {

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.6.230 (2026-05-02) — MdxEditor 工具栏 18 语言 i18n + Ctrl+S/Cmd+S 保存快捷键
+
+### MdxEditor 工具栏 tooltip 18 语言全覆盖
+
+- Feature (P0 — 新建 `src/i18n/mdxTranslations.js`，修改 `src/components/MdxEditorPanel.jsx`，删除 `src/i18n/mdxZh.js`): MdxEditor (1.6.213 引入) 工具栏 hover tooltip 之前只覆盖中文（`mdxZhTranslation` 仅 zh/zh-TW，其他 16 语言直接走 lib 默认英文 fallback）。把 mdxZh.js 重写为 mdxTranslations.js，结构改为 18 语言并列对象表，其中 zh/zh-TW 完整保留 dialog/menu/toolbar 翻译，ja/ko/de/es/fr/it/da/pl/ru/ar/no/pt-BR/th/tr/uk 等 15 语言新增 toolbar 段（25 个工具栏 key × 15 = ~375 条新翻译，按 GitHub/Notion/GitLab 行业通用译法）。`mdxTranslation(key, defaultValue, interpolations)` 派生函数走三层 fallback 链：全码 (zh-TW) → 首段 (zh) → defaultValue → key 本身；每次调用都 `getLang()`，配合 `<MDXEditor key={lang}>` 强制重挂载保证切语言时 toolbar tooltip 立即生效（lib 内部 `t()` 在 init 时一次性读取，无 subscribe 机制）。代价：切语言时编辑光标 + undo/redo history 丢失（用户切语言频率极低，`initialMarkdown` 回填保证内容不丢，可接受 trade-off）。
+
+### MdxEditor 模式补 Ctrl+S/Cmd+S 保存快捷键
+
+- Fix (P1 — `src/components/FileContentView.jsx`): CodeMirror 模式有 `keymap.of([{ key: 'Mod-s', run: ... }])`（L652-654）但 MdxEditor 富文本模式没有快捷键，按 Ctrl+S 走浏览器原生「另存为」对话框无法保存。加 `useEffect`，仅在 `useMdxEditor === true` 守卫下挂 document keydown 监听，匹配 `(metaKey||ctrlKey) && !shift && !alt && (s||S)` 时 `preventDefault()` + `saveRef.current?.()`。saveRef 已有 `isDirty` 守卫，不脏不发请求。CodeMirror 模式由 `useMdxEditor` 守卫排除，避免双触发。
+
+- Test: 新增 `test/mdx-translations.test.js` 12 条单测（zh/en/ja/pt-BR/zh-TW 命中、未知 lang/key fallback、占位符 `{{shortcut}}` `{{level}}` 替换、既有 zh dialog key 保留、**17 语言核心 toolbar key 覆盖 sanity check** 防 typo / 漏粘贴、interpolate 双花括号优先单花括号兜底）。1393/1393 全绿；build 成功。
+
+- Code Review: 4 视角并行（requirements / i18n quality / side-effect / regression-quality），结论 0 修订建议（唯一 D 级 RTL CSS 项被驳回——MdxEditor lib 自身不支持 RTL toolbar 布局，全局 `direction: rtl` 会翻转整个 UI 而非仅 tooltip，超本次范围）。
+
 ## 1.6.229 (2026-05-02) — ExitPlanMode/AskUserQuestion 卡片审批/答完不切状态修复（_sessionItemCache prop 刷新）
 
 ### 卡片状态卡 pending：cached React Element 持有过期 prop 引用
